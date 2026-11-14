@@ -5,6 +5,7 @@
 CREATE DATABASE IF NOT EXISTS `trip_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE `trip_db`;
 
+DROP TABLE IF EXISTS `reviews`;
 DROP TABLE IF EXISTS `trips`;
 DROP TABLE IF EXISTS `seats`;
 DROP TABLE IF EXISTS `buses`;
@@ -70,6 +71,18 @@ CREATE TABLE `trips` (
     CONSTRAINT `fk_trip_bus` FOREIGN KEY (`bus_id`) REFERENCES `buses` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 6. Bảng đánh giá và nhận xét chuyến xe từ khách hàng
+CREATE TABLE `reviews` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `trip_id` INT NOT NULL,
+    `user_id` INT NOT NULL, -- Logic Ref sang user_db (người đánh giá)
+    `customer_name` VARCHAR(100) NOT NULL,
+    `rating` TINYINT NOT NULL CHECK (`rating` >= 1 AND `rating` <= 5),
+    `comment` TEXT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_review_trip` FOREIGN KEY (`trip_id`) REFERENCES `trips` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =============================================
 -- DỮ LIỆU MẪU BAN ĐẦU (SEED DATA)
 -- =============================================
@@ -106,3 +119,8 @@ INSERT INTO `seats` (`bus_id`, `seat_code`, `floor_number`, `seat_type`) VALUES
 INSERT INTO `trips` (`id`, `route_id`, `bus_id`, `driver_id`, `departure_time`, `arrival_time`, `price`, `status`) VALUES
 (1, 1, 1, 2, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(DATE_ADD(NOW(), INTERVAL 1 DAY), INTERVAL 6 HOUR), 320000.00, 'SCHEDULED'),
 (2, 1, 1, 3, DATE_ADD(NOW(), INTERVAL 2 DAY), DATE_ADD(DATE_ADD(NOW(), INTERVAL 2 DAY), INTERVAL 6 HOUR), 320000.00, 'SCHEDULED');
+
+-- Đánh giá mẫu cho chuyến xe
+INSERT INTO `reviews` (`trip_id`, `user_id`, `customer_name`, `rating`, `comment`, `created_at`) VALUES
+(1, 4, 'Hoàng Khách Hàng', 5, 'Xe chạy rất êm, bác tài lái cẩn thận, giường nằm sạch sẽ thơm tho!', NOW()),
+(1, 5, 'Lê Thị Mai', 5, 'Khởi hành đúng giờ, có nước suối và khăn lạnh miễn phí. Rất hài lòng!', NOW());
