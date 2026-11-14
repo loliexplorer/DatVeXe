@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Ticket, Calendar, MapPin, QrCode, Clock, CheckCircle2 } from 'lucide-react';
+import { X, Ticket, Calendar, MapPin, QrCode, Clock, CheckCircle2, Navigation } from 'lucide-react';
 
-export default function MyTicketsModal({ isOpen, onClose, user, onShowQrTicket, ticketsList = [] }) {
+export default function MyTicketsModal({ isOpen, onClose, user, onShowQrTicket, onOpenTracking, ticketsList = [] }) {
   if (!isOpen) return null;
 
   return (
@@ -100,14 +100,25 @@ export default function MyTicketsModal({ isOpen, onClose, user, onShowQrTicket, 
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onShowQrTicket(ticket)}
-                    className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95"
-                  >
-                    <QrCode className="w-4 h-4" />
-                    <span>Xem mã QR lên xe</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenTracking(ticket)}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-brand-800 border border-brand-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs active:scale-95"
+                    >
+                      <Navigation className="w-3.5 h-3.5 text-brand-600" />
+                      <span>Theo dõi hành trình</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onShowQrTicket(ticket)}
+                      className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      <span>Xem mã QR</span>
+                    </button>
+                  </div>
                 </div>
 
               </div>

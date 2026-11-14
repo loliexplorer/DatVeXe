@@ -24,7 +24,9 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         fullName,
         email,
         phone,
-        role: "CUSTOMER"
+        role: "CUSTOMER",
+        membershipTier: "BRONZE",
+        loyaltyPoints: 0
       });
     } else {
       if (!email || !password) {
@@ -32,12 +34,15 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         return;
       }
       // Giả lập đăng nhập
+      const isDriver = email.includes("driver");
       onLoginSuccess({
-        id: 4,
-        fullName: email.includes("driver") ? "Trần Văn Lái" : "Hoàng Khách Hàng",
+        id: isDriver ? 2 : 4,
+        fullName: isDriver ? "Trần Văn Lái" : "Hoàng Khách Hàng",
         email,
-        phone: "0903000001",
-        role: email.includes("driver") ? "DRIVER" : "CUSTOMER"
+        phone: isDriver ? "0902000001" : "0903000001",
+        role: isDriver ? "DRIVER" : "CUSTOMER",
+        membershipTier: isDriver ? "BRONZE" : "SILVER",
+        loyaltyPoints: isDriver ? 0 : 850
       });
     }
     onClose();
@@ -51,7 +56,9 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         fullName: "Hoàng Khách Hàng",
         email: "khachhang@gmail.com",
         phone: "0903000001",
-        role: "CUSTOMER"
+        role: "CUSTOMER",
+        membershipTier: "SILVER",
+        loyaltyPoints: 850
       });
     } else if (role === "DRIVER") {
       onLoginSuccess({
@@ -59,7 +66,9 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         fullName: "Trần Văn Lái (Tài xế)",
         email: "driver1@vexere.com",
         phone: "0902000001",
-        role: "DRIVER"
+        role: "DRIVER",
+        membershipTier: "BRONZE",
+        loyaltyPoints: 0
       });
     }
     onClose();

@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { CheckCircle, QrCode, Download, Printer, Home, Bus, Calendar, MapPin, Ticket } from 'lucide-react';
+import { CheckCircle, QrCode, Download, Printer, Home, Bus, Calendar, MapPin, Ticket, Navigation } from 'lucide-react';
 
-export default function TicketSuccess({ orderData, onReset, isNewBooking = false }) {
+export default function TicketSuccess({ orderData, onReset, onOpenTracking, isNewBooking = false }) {
   useEffect(() => {
     // Chỉ kích hoạt pháo hoa chúc mừng nếu vừa thanh toán mới thành công
     if (isNewBooking) {
@@ -139,16 +139,16 @@ export default function TicketSuccess({ orderData, onReset, isNewBooking = false
         <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-2">
             <button
+              onClick={() => onOpenTracking && onOpenTracking(orderData)}
+              className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-brand-800 border border-brand-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+            >
+              <Navigation className="w-4 h-4 text-brand-600" /> Theo dõi lộ trình xe
+            </button>
+            <button
               onClick={() => window.print()}
               className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-100 flex items-center gap-1.5 transition-all shadow-xs"
             >
               <Printer className="w-4 h-4 text-slate-500" /> In vé
-            </button>
-            <button
-              onClick={() => alert("Đã lưu vé điện tử về máy thành công!")}
-              className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-100 flex items-center gap-1.5 transition-all shadow-xs"
-            >
-              <Download className="w-4 h-4 text-slate-500" /> Tải về máy
             </button>
           </div>
 

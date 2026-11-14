@@ -7,6 +7,7 @@ export default function Navbar({
   onOpenAuth, 
   onLogout, 
   onOpenMyTickets, 
+  onOpenProfile,
   onOpenDriverMode 
 }) {
   return (
@@ -77,17 +78,32 @@ export default function Navbar({
               /* Đã đăng nhập: Hiện Avatar + Tên + Đăng xuất */
               <div className="flex items-center gap-3">
                 <div 
-                  onClick={onOpenMyTickets}
-                  className="flex items-center gap-2 cursor-pointer bg-brand-800/80 hover:bg-brand-800 px-3 py-1.5 rounded-xl border border-brand-700/60 transition-all"
+                  onClick={onOpenProfile}
+                  className="flex items-center gap-2 cursor-pointer bg-brand-800/80 hover:bg-brand-800 px-3 py-1.5 rounded-xl border border-brand-700/60 transition-all hover:scale-105"
+                  title="Xem hồ sơ & Cài đặt tài khoản"
                 >
                   <div className="w-7 h-7 rounded-full bg-brand-500 text-brand-950 font-black flex items-center justify-center text-xs">
                     {currentUser.fullName.charAt(0)}
                   </div>
                   <div className="text-left hidden sm:block">
                     <span className="text-xs font-bold block leading-tight text-white">{currentUser.fullName}</span>
-                    <span className="text-[10px] text-brand-300 uppercase font-semibold">
-                      {currentUser.role === "DRIVER" ? "Tài xế" : "Hội viên"}
-                    </span>
+                    {currentUser.role === "DRIVER" ? (
+                      <span className="text-[10px] text-amber-300 uppercase font-semibold flex items-center gap-1">
+                        🚗 Tài xế
+                      </span>
+                    ) : (
+                      <span className="text-[10px] uppercase font-bold flex items-center gap-1">
+                        {currentUser.membershipTier === "GOLD" && (
+                          <span className="text-amber-300 flex items-center gap-0.5">👑 Hội viên Vàng</span>
+                        )}
+                        {currentUser.membershipTier === "SILVER" && (
+                          <span className="text-slate-200 flex items-center gap-0.5">🥈 Hội viên Bạc</span>
+                        )}
+                        {(!currentUser.membershipTier || currentUser.membershipTier === "BRONZE") && (
+                          <span className="text-amber-400 flex items-center gap-0.5">🥉 Hội viên Đồng</span>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -7,6 +7,8 @@ import TicketSuccess from './components/TicketSuccess';
 import AuthModal from './components/AuthModal';
 import MyTicketsModal from './components/MyTicketsModal';
 import DriverCheckInModal from './components/DriverCheckInModal';
+import TripTrackingModal from './components/TripTrackingModal';
+import UserProfileModal from './components/UserProfileModal';
 import { MOCK_TRIPS, POPULAR_ROUTES, STATIONS } from './data/mockData';
 import { Sparkles, Bus, CheckCircle2, ArrowRight, Filter, ShieldCheck } from 'lucide-react';
 
@@ -17,13 +19,17 @@ export default function App() {
     fullName: "Hoàng Khách Hàng",
     email: "khachhang@gmail.com",
     phone: "0903000001",
-    role: "CUSTOMER"
+    role: "CUSTOMER",
+    membershipTier: "SILVER",
+    loyaltyPoints: 850
   });
 
   // Trạng thái các Modal
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMyTicketsOpen, setIsMyTicketsOpen] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [trackingTicket, setTrackingTicket] = useState(null);
 
   // Trạng thái tìm kiếm
   const [searchParams, setSearchParams] = useState({
@@ -187,6 +193,7 @@ export default function App() {
         currentUser={currentUser}
         onReset={handleReset} 
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
         onLogout={() => {
           setCurrentUser(null);
           alert("Đã đăng xuất tài khoản!");
@@ -208,6 +215,7 @@ export default function App() {
           <TicketSuccess 
             orderData={completedOrder} 
             onReset={handleReset} 
+            onOpenTracking={(order) => setTrackingTicket(order)}
             isNewBooking={isNewBooking}
           />
         </main>
@@ -416,6 +424,10 @@ export default function App() {
         onClose={() => setIsMyTicketsOpen(false)}
         user={currentUser}
         ticketsList={userTickets}
+        onOpenTracking={(ticket) => {
+          setIsMyTicketsOpen(false);
+          setTrackingTicket(ticket);
+        }}
         onShowQrTicket={(ticket) => {
           setIsMyTicketsOpen(false);
           setIsNewBooking(false); // Không bắn pháo hoa khi chỉ xem lại vé cũ
@@ -444,6 +456,26 @@ export default function App() {
       <DriverCheckInModal
         isOpen={isDriverModalOpen}
         onClose={() => setIsDriverModalOpen(false)}
+      />
+
+      {/* 6. Modal Theo dõi Bản đồ hành trình xe thời gian thực */}
+      <TripTrackingModal
+        isOpen={Boolean(trackingTicket)}
+        ticket={trackingTicket}
+        onClose={() => setTrackingTicket(null)}
+      />
+
+      {/* 7. Modal Hồ sơ Người dùng & Cài đặt */}
+      <UserProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        currentUser={currentUser}
+        onOpenMyTickets={() => setIsMyTicketsOpen(true)}
+        onLogout={() => {
+          setCurrentUser(null);
+          setIsProfileOpen(false);
+          alert("Đã đăng xuất tài khoản!");
+        }}
       />
 
       {/* Footer */}
