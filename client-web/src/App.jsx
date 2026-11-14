@@ -9,8 +9,12 @@ import MyTicketsModal from './components/MyTicketsModal';
 import DriverCheckInModal from './components/DriverCheckInModal';
 import TripTrackingModal from './components/TripTrackingModal';
 import UserProfileModal from './components/UserProfileModal';
+import TripReviewsModal from './components/TripReviewsModal';
 import { MOCK_TRIPS, POPULAR_ROUTES, STATIONS } from './data/mockData';
-import { Sparkles, Bus, CheckCircle2, ArrowRight, Filter, ShieldCheck } from 'lucide-react';
+import { 
+  Sparkles, Bus, CheckCircle2, ArrowRight, Filter, 
+  ShieldCheck, ArrowUpDown, SlidersHorizontal, Sun, Moon, Star, Clock, Clock4
+} from 'lucide-react';
 
 export default function App() {
   // Trạng thái tài khoản người dùng đăng nhập (Mặc định null = chưa đăng nhập)
@@ -40,6 +44,25 @@ export default function App() {
 
   const [hasSearched, setHasSearched] = useState(false);
   const [filterBusType, setFilterBusType] = useState("ALL");
+  const [timeFilter, setTimeFilter] = useState("ALL"); // "ALL" | "MORNING" | "AFTERNOON"
+  const [sortBy, setSortBy] = useState("DEFAULT"); // "DEFAULT" | "PRICE_ASC" | "PRICE_DESC" | "TIME_ASC" | "RATING_DESC"
+
+  // Modal Đánh giá chuyến xe
+  const [reviewTrip, setReviewTrip] = useState(null);
+  const [reviewsMap, setReviewsMap] = useState({
+    1: [
+      { id: 101, userName: "Hoàng Khách Hàng", rating: 5, date: "12/11/2026", comment: "Xe chạy rất êm, bác tài lái cẩn thận, giường nằm sạch sẽ thơm tho!" },
+      { id: 102, userName: "Lê Thị Mai", rating: 5, date: "10/11/2026", comment: "Khởi hành đúng giờ, có nước suối và khăn lạnh miễn phí. Rất hài lòng!" },
+      { id: 103, userName: "Trần Minh Quân", rating: 4, date: "08/11/2026", comment: "Xe mới, wifi ổn định. Điểm cộng là có rèm che cabin riêng tư." }
+    ],
+    2: [
+      { id: 201, userName: "Đặng Thu Thảo", rating: 5, date: "11/11/2026", comment: "Ghế massage ngồi cực kỳ thích, tài xế lịch sự, xe đón đúng hẹn tại Mỹ Đình." },
+      { id: 202, userName: "Nguyễn Hải Đăng", rating: 5, date: "09/11/2026", comment: "Đáng giá từng đồng cho xe Limousine VIP, xe chạy êm ru suốt cao tốc." }
+    ],
+    3: [
+      { id: 301, userName: "Phạm Quốc Tuấn", rating: 5, date: "13/11/2026", comment: "Đi chuyến đêm ngủ một giấc là tới Sa Pa, chăn ấm và xe không bị mùi say xe." }
+    ]
+  });
 
   // Trạng thái chuyến đang mở sơ đồ ghế & ghế đã chọn
   const [expandedTripId, setExpandedTripId] = useState(null);
@@ -176,14 +199,82 @@ export default function App() {
     setActiveCheckoutTrip(null);
     setCompletedOrder(null);
     setIsNewBooking(false);
+    setFilterBusType("ALL");
+    setTimeFilter("ALL");
+    setSortBy("DEFAULT");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Lọc chuyến xe
-  const filteredTrips = trips.filter(trip => {
-    if (filterBusType !== "ALL" && trip.busType !== filterBusType) return false;
-    return true;
-  });
+  // Thêm đánh giá mới cho chuyến xe
+  const handleAddReview = (tripId, reviewObj) => {
+    setReviewsMap(prev => ({
+      ...prev,
+      [tripId]: [reviewObj, ...(prev[tripId] || [])]
+    }));
+    setTrips(prev => prev.map(t => {
+      if (t.id === tripId) {
+        return {
+          ...t,
+          reviewsCount: (t.reviewsCount || 0) + 1
+        };
+      }
+      return t;
+    }));
+  };
+
+  // Hủy vé xe & Hoàn tiền (Giải phóng ghế trên chuyến xe)
+  const handleCancelTicket = (ticketId) => {
+    const targetTicket = userTickets.find(t => t.id === ticketId);
+    if (!targetTicket) return;
+
+    // 1. Cập nhật trạng thái vé sang CANCELLED
+    setUserTickets(prev => prev.map(t => {
+      if (t.id === ticketId) {
+        return {
+          ...t,
+          status: "CANCELLED",
+          statusText: "Đã hủy & Hoàn tiền"
+        };
+      }
+      return t;
+    }));
+
+    // 2. Trả lại các ghế trống cho chuyến xe
+    setTrips(prev => prev.map(t => {
+      if (t.id === targetTicket.tripId) {
+        return {
+          ...t,
+          bookedSeats: (t.bookedSeats || []).filter(seat => !targetTicket.seats.includes(seat))
+        };
+      }
+      return t;
+    }));
+  };
+
+  // Lọc và Sắp xếp chuyến xe thông minh
+  const filteredTrips = trips
+    .filter(trip => {
+      // 1. Lọc loại xe
+      if (filterBusType !== "ALL" && trip.busType !== filterBusType) return false;
+
+      // 2. Lọc khung giờ khởi hành
+      if (timeFilter === "MORNING") {
+        const hour = parseInt(trip.departureTime.split(":")[0], 10);
+        if (hour >= 12) return false;
+      } else if (timeFilter === "AFTERNOON") {
+        const hour = parseInt(trip.departureTime.split(":")[0], 10);
+        if (hour < 12) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "PRICE_ASC") return a.price - b.price;
+      if (sortBy === "PRICE_DESC") return b.price - a.price;
+      if (sortBy === "TIME_ASC") return a.departureTime.localeCompare(b.departureTime);
+      if (sortBy === "RATING_DESC") return (b.rating || 0) - (a.rating || 0);
+      return 0; // Mặc định
+    });
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 font-sans text-slate-800">
@@ -252,63 +343,136 @@ export default function App() {
             
             {hasSearched ? (
               <div id="search-results" className="scroll-mt-20 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 mb-6 border-b border-slate-200 gap-4">
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
-                      <span>{searchParams.origin}</span>
-                      <span className="text-brand-600">➔</span>
-                      <span>{searchParams.destination}</span>
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Ngày khởi hành: <span className="font-bold text-slate-700">{searchParams.departDate}</span> • Tìm thấy <span className="font-bold text-brand-600">{filteredTrips.length} chuyến</span>
+                {/* Tiêu đề & Thông số tìm kiếm */}
+                <div className="pb-5 mb-5 border-b border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
+                        <span>{searchParams.origin}</span>
+                        <span className="text-brand-600">➔</span>
+                        <span>{searchParams.destination}</span>
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Ngày khởi hành: <span className="font-bold text-slate-700">{searchParams.departDate}</span> • Tìm thấy <span className="font-bold text-brand-600">{filteredTrips.length} chuyến</span> phù hợp
+                      </p>
+                    </div>
+
+                    {/* Sắp xếp nhanh */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 shrink-0">
+                        <ArrowUpDown className="w-3.5 h-3.5" /> Sắp xếp:
+                      </span>
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 bg-white outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-xs cursor-pointer"
+                      >
+                        <option value="DEFAULT">⚡ Đề xuất (Mặc định)</option>
+                        <option value="PRICE_ASC">💵 Giá: Thấp đến cao</option>
+                        <option value="PRICE_DESC">💎 Giá: Cao đến thấp</option>
+                        <option value="TIME_ASC">⏰ Giờ: Khởi hành sớm nhất</option>
+                        <option value="RATING_DESC">⭐ Đánh giá: Cao nhất</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Thanh Bộ Lọc Nâng Cao */}
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                    {/* Lọc Khung Giờ Xuất Bến */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 mr-1">
+                        <Clock4 className="w-3.5 h-3.5" /> Khung giờ:
+                      </span>
+                      <button
+                        onClick={() => setTimeFilter("ALL")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          timeFilter === "ALL" ? "bg-slate-800 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        Tất cả
+                      </button>
+                      <button
+                        onClick={() => setTimeFilter("MORNING")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          timeFilter === "MORNING" ? "bg-amber-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Sun className="w-3 h-3" /> Sáng (00:00 - 12:00)
+                      </button>
+                      <button
+                        onClick={() => setTimeFilter("AFTERNOON")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          timeFilter === "AFTERNOON" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Moon className="w-3 h-3" /> Chiều & Tối (12:00 - 24:00)
+                      </button>
+                    </div>
+
+                    {/* Lọc Loại Xe */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 mr-1">
+                        <Filter className="w-3.5 h-3.5" /> Loại xe:
+                      </span>
+                      <button
+                        onClick={() => setFilterBusType("ALL")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          filterBusType === "ALL" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        Tất cả
+                      </button>
+                      <button
+                        onClick={() => setFilterBusType("SLEEPER")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          filterBusType === "SLEEPER" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        Giường nằm (20 chỗ)
+                      </button>
+                      <button
+                        onClick={() => setFilterBusType("LIMOUSINE")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          filterBusType === "LIMOUSINE" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        Limousine VIP (12 chỗ)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Danh sách chuyến xe */}
+                {filteredTrips.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-3">
+                    <Filter className="w-10 h-10 text-slate-300 mx-auto" />
+                    <h3 className="font-bold text-slate-800 text-base">Không tìm thấy chuyến xe phù hợp</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Hiện không có chuyến xe nào khớp với điều kiện lọc của bạn. Bạn hãy thử chọn lại khung giờ hoặc loại xe khác.
                     </p>
-                  </div>
-
-                  {/* Bộ lọc loại xe */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-slate-400 font-semibold flex items-center gap-1">
-                      <Filter className="w-3.5 h-3.5" /> Loại xe:
-                    </span>
                     <button
-                      onClick={() => setFilterBusType("ALL")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        filterBusType === "ALL" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200"
-                      }`}
+                      onClick={() => { setFilterBusType("ALL"); setTimeFilter("ALL"); setSortBy("DEFAULT"); }}
+                      className="px-4 py-2 rounded-xl bg-brand-50 text-brand-700 border border-brand-200 font-bold text-xs hover:bg-brand-100 transition-all"
                     >
-                      Tất cả
-                    </button>
-                    <button
-                      onClick={() => setFilterBusType("SLEEPER")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        filterBusType === "SLEEPER" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200"
-                      }`}
-                    >
-                      Giường nằm (20 chỗ)
-                    </button>
-                    <button
-                      onClick={() => setFilterBusType("LIMOUSINE")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        filterBusType === "LIMOUSINE" ? "bg-brand-600 text-white shadow-xs" : "bg-white text-slate-600 border border-slate-200"
-                      }`}
-                    >
-                      Limousine VIP (12 chỗ)
+                      Đặt lại bộ lọc
                     </button>
                   </div>
-                </div>
-
-                <div className="space-y-4">
-                  {filteredTrips.map(trip => (
-                    <TripCard
-                      key={trip.id}
-                      trip={trip}
-                      isExpanded={expandedTripId === trip.id}
-                      onToggleExpand={() => handleToggleExpand(trip.id)}
-                      selectedSeats={selectedSeats}
-                      onToggleSeat={handleToggleSeat}
-                      onProceed={handleProceedToCheckout}
-                    />
-                  ))}
-                </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredTrips.map(trip => (
+                      <TripCard
+                        key={trip.id}
+                        trip={trip}
+                        isExpanded={expandedTripId === trip.id}
+                        onToggleExpand={() => handleToggleExpand(trip.id)}
+                        selectedSeats={selectedSeats}
+                        onToggleSeat={handleToggleSeat}
+                        onProceed={handleProceedToCheckout}
+                        onOpenReviews={() => setReviewTrip(trip)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div id="popular-routes" className="space-y-12">
@@ -424,6 +588,19 @@ export default function App() {
         onClose={() => setIsMyTicketsOpen(false)}
         user={currentUser}
         ticketsList={userTickets}
+        onCancelTicket={handleCancelTicket}
+        onOpenReviews={(ticket) => {
+          const matchedTrip = trips.find(t => t.id === ticket.tripId) || {
+            id: ticket.tripId,
+            busName: ticket.tripName,
+            busTypeName: "Chuyến xe của bạn",
+            originStation: ticket.origin,
+            destStation: ticket.destination,
+            rating: 5.0,
+            reviewsCount: 1
+          };
+          setReviewTrip(matchedTrip);
+        }}
         onOpenTracking={(ticket) => {
           setIsMyTicketsOpen(false);
           setTrackingTicket(ticket);
@@ -450,6 +627,16 @@ export default function App() {
             paymentMethod: "QR_VNPAY"
           });
         }}
+      />
+
+      {/* Modal Đánh giá và nhận xét chất lượng chuyến xe */}
+      <TripReviewsModal
+        isOpen={Boolean(reviewTrip)}
+        trip={reviewTrip}
+        reviews={reviewTrip ? (reviewsMap[reviewTrip.id] || []) : []}
+        onAddReview={handleAddReview}
+        currentUser={currentUser}
+        onClose={() => setReviewTrip(null)}
       />
 
       {/* 5. Modal Chế độ Tài xế Soát vé QR */}

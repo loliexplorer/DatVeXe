@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Clock, Star, Wifi, Coffee, Usb, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import SeatMap from './SeatMap';
 
-export default function TripCard({ trip, onSelectTrip, isExpanded, onToggleExpand, selectedSeats, onToggleSeat, onProceed }) {
+export default function TripCard({ trip, onSelectTrip, isExpanded, onToggleExpand, selectedSeats, onToggleSeat, onProceed, onOpenReviews }) {
   const availableSeatsCount = trip.totalSeats - (trip.bookedSeats?.length || 0);
 
   return (
@@ -13,15 +13,21 @@ export default function TripCard({ trip, onSelectTrip, isExpanded, onToggleExpan
           
           {/* Thông tin nhà xe & Lộ trình */}
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2.5">
+            <div className="flex items-center gap-3 mb-2.5 flex-wrap">
               <span className="font-extrabold text-lg text-slate-900">{trip.busName}</span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-brand-50 border border-brand-200 text-brand-700 font-semibold">
                 {trip.busTypeName}
               </span>
-              <span className="flex items-center gap-1 text-xs font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
-                <Star className="w-3.5 h-3.5 fill-current" />
-                {trip.rating} <span className="text-slate-400 font-normal">({trip.reviewsCount})</span>
-              </span>
+              <button
+                type="button"
+                onClick={() => onOpenReviews && onOpenReviews(trip)}
+                className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-0.5 rounded-md transition-all cursor-pointer"
+                title="Bấm để xem các đánh giá từ hành khách"
+              >
+                <Star className="w-3.5 h-3.5 fill-current text-amber-500" />
+                <span>{trip.rating}</span>
+                <span className="text-slate-500 font-normal underline">({trip.reviewsCount} đánh giá)</span>
+              </button>
             </div>
 
             {/* Lịch trình giờ chạy */}
