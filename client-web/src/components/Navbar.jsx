@@ -65,6 +65,17 @@ export default function Navbar({
               </button>
             )}
 
+            {/* Nếu là Quản trị viên (Admin) ➔ Hiện menu Cổng Quản Trị */}
+            {currentUser?.role === "ADMIN" && (
+              <button
+                onClick={() => alert("Chào mừng Quản trị viên! Khi hoàn thiện ghép nhánh admin của nhóm, nút này sẽ mở trực tiếp Cổng Quản trị Điều hành (Admin Dashboard).")}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-200 hover:bg-indigo-500/30 transition-all font-bold text-xs"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                Cổng Quản Trị (Admin)
+              </button>
+            )}
+
             <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-brand-800/80 border border-brand-700/60 text-brand-300">
               <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
               Cam kết giữ đúng 100% số ghế
@@ -87,7 +98,11 @@ export default function Navbar({
                   </div>
                   <div className="text-left hidden sm:block">
                     <span className="text-xs font-bold block leading-tight text-white">{currentUser.fullName}</span>
-                    {currentUser.role === "DRIVER" ? (
+                    {currentUser.role === "ADMIN" ? (
+                      <span className="text-[10px] text-indigo-300 uppercase font-semibold flex items-center gap-1">
+                        🛡️ Quản trị viên
+                      </span>
+                    ) : currentUser.role === "DRIVER" ? (
                       <span className="text-[10px] text-amber-300 uppercase font-semibold flex items-center gap-1">
                         🚗 Tài xế
                       </span>
