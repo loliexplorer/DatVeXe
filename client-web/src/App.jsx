@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
-import Navbar from './components/Navbar';
-import SearchBar from './components/SearchBar';
-import TripCard from './components/TripCard';
-import CheckoutModal from './components/CheckoutModal';
-import TicketSuccess from './components/TicketSuccess';
-import AuthModal from './components/AuthModal';
-import MyTicketsModal from './components/MyTicketsModal';
-import DriverCheckInModal from './components/DriverCheckInModal';
-import TripTrackingModal from './components/TripTrackingModal';
-import UserProfileModal from './components/UserProfileModal';
-import TripReviewsModal from './components/TripReviewsModal';
+// Components dùng chung
+import Navbar from './components/common/Navbar';
+import AuthModal from './components/common/AuthModal';
+import UserProfileModal from './components/common/UserProfileModal';
+
+// Components luồng Khách hàng
+import SearchBar from './components/customer/SearchBar';
+import TripCard from './components/customer/TripCard';
+import CheckoutModal from './components/customer/CheckoutModal';
+import TicketSuccess from './components/customer/TicketSuccess';
+import MyTicketsModal from './components/customer/MyTicketsModal';
+import TripTrackingModal from './components/customer/TripTrackingModal';
+import TripReviewsModal from './components/customer/TripReviewsModal';
+
+// Components luồng Tài xế
+import DriverCheckInModal from './components/driver/DriverCheckInModal';
 import { MOCK_TRIPS, POPULAR_ROUTES, STATIONS } from './data/mockData';
 import { 
   Sparkles, Bus, CheckCircle2, ArrowRight, Filter, 

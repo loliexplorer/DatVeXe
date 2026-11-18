@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MapPin, Calendar, ArrowRightLeft, Search } from 'lucide-react';
-import { STATIONS } from '../data/mockData';
+import { STATIONS } from '../../data/mockData';
 
 export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initialDest = "Sa Pa" }) {
   const [origin, setOrigin] = useState(initialOrigin);
