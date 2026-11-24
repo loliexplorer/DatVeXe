@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { 
   X, Lock, Mail, Phone, User, LogIn, UserPlus, 
   Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft, 
-  ShieldCheck, KeyRound, Sparkles
+  ShieldCheck, KeyRound, Sparkles, Loader2
 } from 'lucide-react';
+import { loginApi, registerApi, forgotPasswordApi } from '../../services/userApi';
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   if (!isOpen) return null;
@@ -28,11 +29,12 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
-  // Thông báo lỗi
+  // Thông báo lỗi & Loading
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Xử lý gửi form Đăng nhập / Đăng ký
-  const handleSubmit = (e) => {
+  // Xử lý gửi form Đăng nhập / Đăng ký qua API Gateway -> user-service
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -54,101 +56,83 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         return;
       }
 
-      // Giả lập đăng ký thành công tài khoản Khách hàng
-      onLoginSuccess({
-        id: Date.now(),
-        fullName: fullName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        role: "CUSTOMER",
-        membershipTier: "BRONZE",
-        loyaltyPoints: 0
-      });
-      onClose();
+      setIsSubmitting(true);
+      try {
+        const res = await registerApi({
+          full_name: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          password
+        });
+        onLoginSuccess(res.user);
+        onClose();
+      } catch (err) {
+        setErrorMessage(err.message);
+      } finally {
+        setIsSubmitting(false);
+      }
     } else if (mode === 'login') {
       if (!email.trim() || !password) {
         setErrorMessage("Vui lòng nhập đầy đủ Email và Mật khẩu!");
         return;
       }
 
-      // Nhận diện vai trò từ email
-      const lowerEmail = email.toLowerCase().trim();
-      let role = "CUSTOMER";
-      let name = "Hoàng Khách Hàng";
-      let tier = "SILVER";
-      let points = 850;
-
-      if (lowerEmail.includes("driver")) {
-        role = "DRIVER";
-        name = "Trần Văn Lái (Tài xế)";
-        tier = "BRONZE";
-        points = 0;
-      } else if (lowerEmail.includes("admin")) {
-        role = "ADMIN";
-        name = "Nguyễn Quản Trị (Admin)";
-        tier = "GOLD";
-        points = 2500;
+      setIsSubmitting(true);
+      try {
+        const res = await loginApi({
+          email: email.trim(),
+          password
+        });
+        onLoginSuccess(res.user);
+        onClose();
+      } catch (err) {
+        setErrorMessage(err.message);
+      } finally {
+        setIsSubmitting(false);
       }
-
-      onLoginSuccess({
-        id: role === "ADMIN" ? 1 : (role === "DRIVER" ? 2 : 4),
-        fullName: name,
-        email: lowerEmail,
-        phone: "0903000001",
-        role: role,
-        membershipTier: tier,
-        loyaltyPoints: points
-      });
-      onClose();
     }
   };
 
   // Xử lý gửi yêu cầu quên mật khẩu
-  const handleForgotPasswordSubmit = (e) => {
+  const handleForgotPasswordSubmit = async (e) => {
     e.preventDefault();
     if (!forgotEmail.trim()) {
       setErrorMessage("Vui lòng nhập địa chỉ email của bạn!");
       return;
     }
     setErrorMessage('');
-    setForgotSuccess(true);
+    setIsSubmitting(true);
+    try {
+      await forgotPasswordApi(forgotEmail.trim());
+      setForgotSuccess(true);
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Nút đăng nhập nhanh mẫu để test đồ án / demo
-  const handleQuickLogin = (roleType) => {
+  // Nút đăng nhập nhanh mẫu để test đồ án / demo (Gọi API thật lấy JWT thật)
+  const handleQuickLogin = async (roleType) => {
     setErrorMessage('');
-    if (roleType === "CUSTOMER") {
-      onLoginSuccess({
-        id: 4,
-        fullName: "Hoàng Khách Hàng",
-        email: "khachhang@gmail.com",
-        phone: "0903000001",
-        role: "CUSTOMER",
-        membershipTier: "SILVER",
-        loyaltyPoints: 850
-      });
-    } else if (roleType === "DRIVER") {
-      onLoginSuccess({
-        id: 2,
-        fullName: "Trần Văn Lái (Tài xế)",
-        email: "driver1@vexere.com",
-        phone: "0902000001",
-        role: "DRIVER",
-        membershipTier: "BRONZE",
-        loyaltyPoints: 0
-      });
-    } else if (roleType === "ADMIN") {
-      onLoginSuccess({
-        id: 1,
-        fullName: "Nguyễn Quản Trị (Admin)",
-        email: "admin@vexere.com",
-        phone: "0901000001",
-        role: "ADMIN",
-        membershipTier: "GOLD",
-        loyaltyPoints: 2500
-      });
+    const demoAccounts = {
+      CUSTOMER: { email: 'khachhang@gmail.com', password: 'Password123@' },
+      DRIVER: { email: 'driver1@vexere.com', password: 'Password123@' },
+      ADMIN: { email: 'admin@vexere.com', password: 'Password123@' }
+    };
+    const creds = demoAccounts[roleType];
+    if (!creds) return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await loginApi(creds);
+      onLoginSuccess(res.user);
+      onClose();
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   return (
@@ -433,10 +417,19 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
             {/* Nút Submit chính */}
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-emerald-600 hover:from-brand-700 hover:to-emerald-700 text-white font-bold text-sm shadow-md shadow-brand-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+              disabled={isSubmitting}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-emerald-600 hover:from-brand-700 hover:to-emerald-700 disabled:opacity-60 text-white font-bold text-sm shadow-md shadow-brand-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
             >
-              {mode === 'register' ? <UserPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-              <span>{mode === 'register' ? "Đăng ký thành viên" : "Đăng nhập ngay"}</span>
+              {isSubmitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                mode === 'register' ? <UserPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />
+              )}
+              <span>
+                {isSubmitting
+                  ? "Đang xử lý..."
+                  : (mode === 'register' ? "Đăng ký thành viên" : "Đăng nhập ngay")}
+              </span>
             </button>
 
             {/* Tiện ích đăng nhập mẫu 1-click dành cho chấm bài / demo */}

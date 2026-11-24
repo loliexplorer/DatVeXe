@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+// Services API
+import { getToken, clearToken, getProfileApi } from './services/userApi';
 // Components dùng chung
 import Navbar from './components/common/Navbar';
 import AuthModal from './components/common/AuthModal';
@@ -22,16 +24,16 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Trạng thái tài khoản người dùng đăng nhập (Mặc định null = chưa đăng nhập)
-  const [currentUser, setCurrentUser] = useState({
-    id: 4,
-    fullName: "Hoàng Khách Hàng",
-    email: "khachhang@gmail.com",
-    phone: "0903000001",
-    role: "CUSTOMER",
-    membershipTier: "SILVER",
-    loyaltyPoints: 850
-  });
+  // Trạng thái tài khoản người dùng đăng nhập (Khởi tạo null, tự động khôi phục từ JWT Token nếu có)
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    getProfileApi()
+      .then((user) => setCurrentUser(user))
+      .catch(() => clearToken());
+  }, []);
 
   // Trạng thái các Modal
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -662,11 +664,12 @@ export default function App() {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         currentUser={currentUser}
+        onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
         onOpenMyTickets={() => setIsMyTicketsOpen(true)}
         onLogout={() => {
+          clearToken();
           setCurrentUser(null);
           setIsProfileOpen(false);
-          alert("Đã đăng xuất tài khoản!");
         }}
       />
 

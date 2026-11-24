@@ -1,23 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, User, Mail, Phone, Lock, Eye, EyeOff, ShieldCheck, 
   Settings, Ticket, Camera, ChevronRight, LogOut, CheckCircle2,
-  Award, Sparkles, Gift, Zap, Shield, Crown
+  Award, Sparkles, Gift, Zap, Shield, Crown, AlertCircle, History
 } from 'lucide-react';
+import {
+  updateProfileApi,
+  getProfileApi,
+  changePasswordApi,
+  getLoyaltyHistoryApi
+} from '../../services/userApi';
 
 export default function UserProfileModal({ 
   isOpen, 
   onClose, 
   currentUser, 
+  onUpdateUser,
   onOpenMyTickets, 
   onLogout 
 }) {
-  if (!isOpen || !currentUser) return null;
-
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'membership' | 'security' | 'settings'
   const [showEmail, setShowEmail] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isSavedToast, setIsSavedToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Controlled form state cho Profile
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+
+  // Controlled form state cho Đổi mật khẩu
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  // Lịch sử điểm thưởng từ MySQL
+  const [loyaltyHistory, setLoyaltyHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setFullName(currentUser.fullName || '');
+      setPhone(currentUser.phone || '');
+    }
+  }, [currentUser, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && currentUser && activeTab === 'membership') {
+      setLoadingHistory(true);
+      getLoyaltyHistoryApi()
+        .then((res) => setLoyaltyHistory(res.data || []))
+        .catch(() => setLoyaltyHistory([]))
+        .finally(() => setLoadingHistory(false));
+    }
+  }, [isOpen, currentUser, activeTab]);
+
+  if (!isOpen || !currentUser) return null;
 
   // Mặc định khách hàng là HỘI VIÊN BẠC (850 điểm / 1500 điểm thăng hạng Vàng)
   const tier = currentUser.membershipTier || "SILVER";
@@ -32,10 +70,55 @@ export default function UserProfileModal({
     return `${name.substring(0, 2)}*****${name.slice(-1)}@${domain}`;
   };
 
-  const handleSaveMock = (e) => {
+  const showToast = (msg) => {
+    setErrorMessage('');
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    setIsSavedToast(true);
-    setTimeout(() => setIsSavedToast(false), 2000);
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      const res = await updateProfileApi({
+        full_name: fullName.trim(),
+        phone: phone.trim()
+      });
+      const freshUser = await getProfileApi();
+      if (onUpdateUser) onUpdateUser(freshUser);
+      showToast(res.message || 'Cập nhật thông tin hồ sơ thành công!');
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setErrorMessage('');
+    if (!oldPassword || !newPassword) {
+      setErrorMessage('Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới!');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setErrorMessage('Mật khẩu mới phải có tối thiểu 6 ký tự!');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await changePasswordApi({
+        old_password: oldPassword,
+        new_password: newPassword
+      });
+      setOldPassword('');
+      setNewPassword('');
+      showToast(res.message || 'Đổi mật khẩu thành công!');
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Cấu hình hiển thị theo từng hạng hội viên
@@ -168,16 +251,23 @@ export default function UserProfileModal({
         {/* Thân Modal: Nội dung từng Tab */}
         <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5">
           
-          {isSavedToast && (
+          {toastMessage && (
             <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Đã cập nhật thông tin thành công (Mô phỏng giao diện)!
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{toastMessage}</span>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="bg-rose-50 border border-rose-300 text-rose-800 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMessage}</span>
             </div>
           )}
 
           {/* TAB 1: THÔNG TIN CÁ NHÂN */}
           {activeTab === 'profile' && (
-            <form onSubmit={handleSaveMock} className="space-y-4">
+            <form onSubmit={handleSaveProfile} className="space-y-4">
               
               {/* Thẻ Hội viên điện tử thu nhỏ */}
               <div 
@@ -239,7 +329,8 @@ export default function UserProfileModal({
                     <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
                       type="text"
-                      defaultValue={currentUser.fullName}
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none text-sm font-semibold bg-white"
                     />
                   </div>
@@ -251,7 +342,8 @@ export default function UserProfileModal({
                     <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
                       type="text"
-                      defaultValue={currentUser.phone}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none text-sm font-semibold bg-white"
                     />
                   </div>
@@ -285,9 +377,10 @@ export default function UserProfileModal({
               <div className="pt-1 text-right">
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-md shadow-brand-500/20 transition-all active:scale-95"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white font-bold text-xs shadow-md shadow-brand-500/20 transition-all active:scale-95"
                 >
-                  Lưu thay đổi
+                  {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </div>
 
@@ -390,6 +483,36 @@ export default function UserProfileModal({
                 </div>
               </div>
 
+              {/* Lịch sử tích lũy điểm thưởng từ user_db */}
+              <div>
+                <h5 className="font-bold text-xs text-slate-800 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <History className="w-4 h-4 text-brand-600" /> Lịch sử tích điểm hội viên
+                </h5>
+                {loadingHistory ? (
+                  <p className="text-xs text-slate-500">Đang tải lịch sử điểm thưởng...</p>
+                ) : loyaltyHistory.length === 0 ? (
+                  <p className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    Chưa có giao dịch tích điểm nào.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {loyaltyHistory.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                        <div>
+                          <span className="font-bold text-slate-800 block">{item.description || 'Giao dịch điểm'}</span>
+                          <span className="text-[11px] text-slate-400">
+                            {item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : ''}
+                          </span>
+                        </div>
+                        <span className={`font-mono font-extrabold ${item.points_change >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {item.points_change >= 0 ? `+${item.points_change}` : item.points_change} điểm
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -414,7 +537,7 @@ export default function UserProfileModal({
 
                 <div className="pt-3">
                   <span className="font-mono text-base tracking-widest text-slate-700 font-black">
-                    {showPassword ? "Password123@" : "••••••••••••"}
+                    {showPassword ? "Đã mã hóa Bcrypt (Bảo mật)" : "••••••••••••"}
                   </span>
                 </div>
               </div>
@@ -423,20 +546,25 @@ export default function UserProfileModal({
                 <h5 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Đổi mật khẩu mới</h5>
                 <input
                   type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
                   placeholder="Mật khẩu hiện tại"
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs outline-none"
                 />
                 <input
                   type="password"
-                  placeholder="Mật khẩu mới (tối thiểu 8 ký tự)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mật khẩu mới (tối thiểu 6 ký tự)"
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs outline-none"
                 />
                 <button
                   type="button"
-                  onClick={() => alert("Đổi mật khẩu thành công!")}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900 transition-all"
+                  disabled={isSaving}
+                  onClick={handleChangePassword}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900 disabled:opacity-60 transition-all"
                 >
-                  Xác nhận đổi mật khẩu
+                  {isSaving ? 'Đang xử lý...' : 'Xác nhận đổi mật khẩu'}
                 </button>
               </div>
             </div>
