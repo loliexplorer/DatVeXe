@@ -137,10 +137,6 @@ export default function App() {
     if (selectedSeats.includes(seatCode)) {
       setSelectedSeats(prev => prev.filter(s => s !== seatCode));
     } else {
-      if (selectedSeats.length >= 6) {
-        alert("Bạn chỉ có thể chọn tối đa 6 ghế trong 1 đơn đặt vé!");
-        return;
-      }
       setSelectedSeats(prev => [...prev, seatCode]);
     }
   };
