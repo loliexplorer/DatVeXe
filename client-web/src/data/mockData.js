@@ -86,7 +86,7 @@ export const MOCK_TRIPS = [
     rating: 4.8,
     reviewsCount: 212,
     amenities: ["Ghế massage", "Màn hình riêng", "Wifi tốc độ cao", "Đón trả tận nơi"],
-    bookedSeats: ["A03", "A04"],
+    bookedSeats: ["L01", "L02"],
     totalSeats: 12
   },
   {

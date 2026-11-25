@@ -3,7 +3,7 @@ import { Clock, Star, Wifi, Coffee, Usb, ChevronDown, ChevronUp, ShieldCheck } f
 import SeatMap from './SeatMap';
 
 export default function TripCard({ trip, onSelectTrip, isExpanded, onToggleExpand, selectedSeats, onToggleSeat, onProceed, onOpenReviews }) {
-  const availableSeatsCount = trip.totalSeats - (trip.bookedSeats?.length || 0);
+  const availableSeatsCount = Math.max(0, trip.totalSeats - (trip.bookedSeats?.length || 0));
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all overflow-hidden mb-4">
@@ -75,8 +75,8 @@ export default function TripCard({ trip, onSelectTrip, isExpanded, onToggleExpan
               <div className="text-2xl font-black text-brand-700">
                 {trip.price.toLocaleString('vi-VN')} <span className="text-sm font-semibold">đ</span>
               </div>
-              <span className={`text-xs font-semibold block mt-0.5 ${availableSeatsCount > 5 ? "text-emerald-600" : "text-amber-600"}`}>
-                Còn {availableSeatsCount} chỗ trống
+              <span className={`text-xs font-semibold block mt-0.5 ${availableSeatsCount > 5 ? "text-emerald-600" : (availableSeatsCount > 0 ? "text-amber-600" : "text-rose-600")}`}>
+                {availableSeatsCount > 0 ? `Còn ${availableSeatsCount} chỗ trống` : "Đã hết chỗ"}
               </span>
             </div>
 
