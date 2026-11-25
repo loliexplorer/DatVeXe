@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 // Services API
 import { getToken, clearToken, getProfileApi } from './services/userApi';
+import {
+  searchTripsApi,
+  getTripSeatsApi,
+  getTripReviewsApi,
+  addTripReviewApi,
+  getMyBookingsApi,
+  cancelBookingApi,
+  sendRefundEmailApi
+} from './services/busApi';
 // Components dùng chung
 import Navbar from './components/common/Navbar';
 import AuthModal from './components/common/AuthModal';
@@ -17,7 +26,7 @@ import TripReviewsModal from './components/customer/TripReviewsModal';
 
 // Components luồng Tài xế
 import DriverCheckInModal from './components/driver/DriverCheckInModal';
-import { MOCK_TRIPS, POPULAR_ROUTES, STATIONS } from './data/mockData';
+import { POPULAR_ROUTES } from './data/mockData';
 import { 
   Sparkles, Bus, CheckCircle2, ArrowRight, Filter, 
   ShieldCheck, ArrowUpDown, SlidersHorizontal, Sun, Moon, Star, Clock, Clock4
@@ -56,60 +65,95 @@ export default function App() {
 
   // Modal Đánh giá chuyến xe
   const [reviewTrip, setReviewTrip] = useState(null);
-  const [reviewsMap, setReviewsMap] = useState({
-    1: [
-      { id: 101, userName: "Hoàng Khách Hàng", rating: 5, date: "12/11/2026", comment: "Xe chạy rất êm, bác tài lái cẩn thận, giường nằm sạch sẽ thơm tho!" },
-      { id: 102, userName: "Lê Thị Mai", rating: 5, date: "10/11/2026", comment: "Khởi hành đúng giờ, có nước suối và khăn lạnh miễn phí. Rất hài lòng!" },
-      { id: 103, userName: "Trần Minh Quân", rating: 4, date: "08/11/2026", comment: "Xe mới, wifi ổn định. Điểm cộng là có rèm che cabin riêng tư." }
-    ],
-    2: [
-      { id: 201, userName: "Đặng Thu Thảo", rating: 5, date: "11/11/2026", comment: "Ghế massage ngồi cực kỳ thích, tài xế lịch sự, xe đón đúng hẹn tại Mỹ Đình." },
-      { id: 202, userName: "Nguyễn Hải Đăng", rating: 5, date: "09/11/2026", comment: "Đáng giá từng đồng cho xe Limousine VIP, xe chạy êm ru suốt cao tốc." }
-    ],
-    3: [
-      { id: 301, userName: "Phạm Quốc Tuấn", rating: 5, date: "13/11/2026", comment: "Đi chuyến đêm ngủ một giấc là tới Sa Pa, chăn ấm và xe không bị mùi say xe." }
-    ]
-  });
+  const [reviewsMap, setReviewsMap] = useState({});
 
   // Trạng thái chuyến đang mở sơ đồ ghế & ghế đã chọn
   const [expandedTripId, setExpandedTripId] = useState(null);
   const [selectedSeats, setSelectedSeats] = useState([]);
 
-  // Danh sách chuyến xe (state để cập nhật ghế đã bán khi đặt vé mới)
-  const [trips, setTrips] = useState(MOCK_TRIPS);
+  // Danh sách chuyến xe thực tế từ trip-service
+  const [trips, setTrips] = useState([]);
+  const [isLoadingTrips, setIsLoadingTrips] = useState(false);
 
-  // Danh sách tất cả vé của người dùng
-  const [userTickets, setUserTickets] = useState([
-    {
-      id: 1,
-      bookingCode: "BK20261106-0001",
-      tripId: 1,
-      tripName: "EcoBus Express VIP (Giường nằm 20 chỗ)",
-      plateNumber: "29B-998.88",
-      origin: "Hà Nội (Bến xe Mỹ Đình)",
-      destination: "Sa Pa (Bến xe Sa Pa)",
-      departureTime: "07:00",
-      departureDate: "10/11/2026",
-      seats: ["A01", "A02"],
-      totalPrice: 640000,
-      status: "CONFIRMED",
-      statusText: "Đã thanh toán",
-      pickupPoint: "Bến xe Mỹ Đình",
-      qrCodeData: "QR-TRIP1-SEAT-A01-A02-SEC9918"
+  // Danh sách tất cả vé của người dùng từ booking-service
+  const [userTickets, setUserTickets] = useState([]);
+
+  // Helper tải danh sách chuyến xe từ trip-service
+  const loadTrips = async (params = {}) => {
+    setIsLoadingTrips(true);
+    try {
+      const list = await searchTripsApi(params);
+      setTrips(list);
+    } catch (err) {
+      console.error('Lỗi tải chuyến xe:', err);
+    } finally {
+      setIsLoadingTrips(false);
     }
-  ]);
+  };
+
+  // Helper tải danh sách vé của người dùng từ booking-service
+  const loadMyBookings = async (tripsList = trips) => {
+    if (!getToken()) {
+      setUserTickets([]);
+      return;
+    }
+    try {
+      const bookings = await getMyBookingsApi();
+      const mapped = bookings.map((b) => {
+        const matchedTrip = tripsList.find(t => t.id === b.trip_id);
+        const seats = (b.tickets || []).map(tk => tk.seat_code);
+        const firstQr = b.tickets?.[0]?.qr_code || `QR-${b.booking_code}`;
+        return {
+          id: b.id,
+          bookingCode: b.booking_code,
+          tripId: b.trip_id,
+          tripName: matchedTrip ? `${matchedTrip.busName} (${matchedTrip.busTypeName})` : `Chuyến xe #${b.trip_id}`,
+          plateNumber: matchedTrip?.plateNumber || '29B-998.88',
+          origin: matchedTrip ? `${matchedTrip.originCity} (${matchedTrip.originStation})` : 'Bến xe đi',
+          destination: matchedTrip ? `${matchedTrip.destinationCity} (${matchedTrip.destStation})` : 'Bến xe đến',
+          departureTime: matchedTrip?.departureTime || '--:--',
+          departureDate: matchedTrip?.departureFull ? new Date(matchedTrip.departureFull).toLocaleDateString('vi-VN') : new Date(b.created_at).toLocaleDateString('vi-VN'),
+          seats,
+          ticketsDetail: b.tickets || [],
+          totalPrice: Number(b.total_amount || 0),
+          status: b.status,
+          statusText: b.status === 'CANCELLED' ? 'Đã hủy & Hoàn tiền' : 'Đã thanh toán',
+          pickupPoint: matchedTrip?.originStation || 'Tại bến xe',
+          qrCodeData: firstQr,
+          customerEmail: b.customer_email,
+          customerName: b.customer_name
+        };
+      });
+      setUserTickets(mapped);
+    } catch (err) {
+      console.error('Lỗi tải vé của tôi:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadTrips().then(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadMyBookings();
+    } else {
+      setUserTickets([]);
+    }
+  }, [currentUser, trips.length]);
 
   // Trạng thái thanh toán & vé đã đặt
   const [activeCheckoutTrip, setActiveCheckoutTrip] = useState(null);
   const [completedOrder, setCompletedOrder] = useState(null);
   const [isNewBooking, setIsNewBooking] = useState(false);
 
-  // Xử lý tìm kiếm
-  const handleSearch = (params) => {
+  // Xử lý tìm kiếm qua trip-service
+  const handleSearch = async (params) => {
     setSearchParams(params);
     setHasSearched(true);
     setExpandedTripId(null);
     setSelectedSeats([]);
+    await loadTrips({ origin: params.origin, destination: params.destination });
     setTimeout(() => {
       document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
@@ -123,13 +167,22 @@ export default function App() {
     });
   };
 
-  const handleToggleExpand = (tripId) => {
+  const handleToggleExpand = async (tripId) => {
     if (expandedTripId === tripId) {
       setExpandedTripId(null);
       setSelectedSeats([]);
     } else {
       setExpandedTripId(tripId);
       setSelectedSeats([]);
+      try {
+        const seatData = await getTripSeatsApi(tripId);
+        if (seatData && Array.isArray(seatData.seats)) {
+          const freshBooked = seatData.seats.filter(s => s.is_booked).map(s => s.seat_code);
+          setTrips(prev => prev.map(t => t.id === tripId ? { ...t, bookedSeats: freshBooked, availableSeats: seatData.total_seats - freshBooked.length } : t));
+        }
+      } catch (err) {
+        console.error('Lỗi tải sơ đồ ghế:', err);
+      }
     }
   };
 
@@ -155,40 +208,11 @@ export default function App() {
     setActiveCheckoutTrip(currentTrip);
   };
 
-  const handlePaymentSuccess = (orderData) => {
-    // 1. Tạo bản ghi vé mới đưa vào danh sách "Vé của tôi"
-    const newTicket = {
-      id: Date.now(),
-      bookingCode: orderData.bookingCode,
-      tripId: orderData.trip.id,
-      tripName: `${orderData.trip.busName} (${orderData.trip.busTypeName})`,
-      plateNumber: orderData.trip.plateNumber,
-      origin: `${orderData.trip.originCity} (${orderData.trip.originStation})`,
-      destination: `${orderData.trip.destinationCity} (${orderData.trip.destStation})`,
-      departureTime: orderData.trip.departureTime,
-      departureDate: searchParams.departDate,
-      seats: orderData.selectedSeats,
-      totalPrice: orderData.totalPrice,
-      status: "CONFIRMED",
-      statusText: "Đã thanh toán",
-      pickupPoint: orderData.customer.pickupPoint,
-      qrCodeData: `QR-${orderData.bookingCode}`
-    };
+  const handlePaymentSuccess = async (orderData) => {
+    await loadTrips();
+    await loadMyBookings();
 
-    setUserTickets(prev => [newTicket, ...prev]);
-
-    // 2. Cập nhật các ghế vừa mua thành "Đã bán" trên chuyến xe
-    setTrips(prev => prev.map(t => {
-      if (t.id === orderData.trip.id) {
-        return {
-          ...t,
-          bookedSeats: [...(t.bookedSeats || []), ...orderData.selectedSeats]
-        };
-      }
-      return t;
-    }));
-
-    // 3. Chuyển sang màn hình hiển thị vé điện tử vừa đặt
+    // Chuyển sang màn hình hiển thị vé điện tử vừa đặt
     setActiveCheckoutTrip(null);
     setIsNewBooking(true);
     setCompletedOrder(orderData);
@@ -205,53 +229,66 @@ export default function App() {
     setFilterBusType("ALL");
     setTimeFilter("ALL");
     setSortBy("DEFAULT");
+    loadTrips();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Thêm đánh giá mới cho chuyến xe
-  const handleAddReview = (tripId, reviewObj) => {
-    setReviewsMap(prev => ({
-      ...prev,
-      [tripId]: [reviewObj, ...(prev[tripId] || [])]
-    }));
-    setTrips(prev => prev.map(t => {
-      if (t.id === tripId) {
-        return {
-          ...t,
-          reviewsCount: (t.reviewsCount || 0) + 1
-        };
-      }
-      return t;
-    }));
+  // Mở modal đánh giá và tải review thật từ trip-service
+  const handleOpenReviews = async (trip) => {
+    setReviewTrip(trip);
+    try {
+      const data = await getTripReviewsApi(trip.id);
+      const formatted = (data?.reviews || []).map(r => ({
+        id: r.id,
+        userName: r.user_name,
+        rating: r.rating,
+        date: new Date(r.created_at).toLocaleDateString('vi-VN'),
+        comment: r.comment
+      }));
+      setReviewsMap(prev => ({ ...prev, [trip.id]: formatted }));
+    } catch (err) {
+      console.error('Lỗi tải đánh giá:', err);
+    }
   };
 
-  // Hủy vé xe & Hoàn tiền (Giải phóng ghế trên chuyến xe)
-  const handleCancelTicket = (ticketId) => {
+  // Thêm đánh giá mới cho chuyến xe qua trip-service
+  const handleAddReview = async (tripId, { rating, comment }) => {
+    await addTripReviewApi(tripId, { rating, comment });
+    const data = await getTripReviewsApi(tripId);
+    const formatted = (data?.reviews || []).map(r => ({
+      id: r.id,
+      userName: r.user_name,
+      rating: r.rating,
+      date: new Date(r.created_at).toLocaleDateString('vi-VN'),
+      comment: r.comment
+    }));
+    setReviewsMap(prev => ({ ...prev, [tripId]: formatted }));
+    setTrips(prev => prev.map(t => t.id === tripId ? { ...t, rating: data.average_rating, reviewsCount: data.total_reviews } : t));
+  };
+
+  // Hủy vé xe & Hoàn tiền qua booking-service + notification-service
+  const handleCancelTicket = async (ticketId) => {
     const targetTicket = userTickets.find(t => t.id === ticketId);
     if (!targetTicket) return;
 
-    // 1. Cập nhật trạng thái vé sang CANCELLED
-    setUserTickets(prev => prev.map(t => {
-      if (t.id === ticketId) {
-        return {
-          ...t,
-          status: "CANCELLED",
-          statusText: "Đã hủy & Hoàn tiền"
-        };
+    try {
+      const res = await cancelBookingApi(ticketId);
+      const refundAmount = res.data?.refund_amount ?? targetTicket.totalPrice;
+      if (targetTicket.customerEmail) {
+        sendRefundEmailApi({
+          user_id: currentUser?.id || null,
+          booking_code: targetTicket.bookingCode,
+          customer_name: targetTicket.customerName || currentUser?.fullName || 'Quý khách',
+          customer_email: targetTicket.customerEmail,
+          refund_amount: refundAmount,
+          reason: 'Khách hàng hủy vé trên hệ thống EcoBus'
+        }).catch(() => {});
       }
-      return t;
-    }));
-
-    // 2. Trả lại các ghế trống cho chuyến xe
-    setTrips(prev => prev.map(t => {
-      if (t.id === targetTicket.tripId) {
-        return {
-          ...t,
-          bookedSeats: (t.bookedSeats || []).filter(seat => !targetTicket.seats.includes(seat))
-        };
-      }
-      return t;
-    }));
+      await loadMyBookings();
+      await loadTrips();
+    } catch (err) {
+      alert(err.message || 'Không thể hủy vé lúc này!');
+    }
   };
 
   // Lọc và Sắp xếp chuyến xe thông minh
@@ -289,8 +326,9 @@ export default function App() {
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
         onLogout={() => {
+          clearToken();
           setCurrentUser(null);
-          alert("Đã đăng xuất tài khoản!");
+          setUserTickets([]);
         }}
         onOpenMyTickets={() => {
           if (!currentUser) {
@@ -471,7 +509,7 @@ export default function App() {
                         selectedSeats={selectedSeats}
                         onToggleSeat={handleToggleSeat}
                         onProceed={handleProceedToCheckout}
-                        onOpenReviews={() => setReviewTrip(trip)}
+                        onOpenReviews={() => handleOpenReviews(trip)}
                       />
                     ))}
                   </div>
@@ -567,6 +605,7 @@ export default function App() {
             <CheckoutModal
               trip={activeCheckoutTrip}
               selectedSeats={selectedSeats}
+              currentUser={currentUser}
               onClose={() => setActiveCheckoutTrip(null)}
               onPaymentSuccess={handlePaymentSuccess}
             />
@@ -602,7 +641,7 @@ export default function App() {
             rating: 5.0,
             reviewsCount: 1
           };
-          setReviewTrip(matchedTrip);
+          handleOpenReviews(matchedTrip);
         }}
         onOpenTracking={(ticket) => {
           setIsMyTicketsOpen(false);

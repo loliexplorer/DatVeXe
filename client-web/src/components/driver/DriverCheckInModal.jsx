@@ -1,59 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ScanLine, CheckCircle, ShieldAlert, Bus, User, MapPin } from 'lucide-react';
+import { checkInTicketApi, getDriverScheduleApi } from '../../services/busApi';
 
 export default function DriverCheckInModal({ isOpen, onClose }) {
-  if (!isOpen) return null;
-
-  const [passengers, setPassengers] = useState([
-    {
-      id: 1,
-      seat: "A01",
-      name: "Hoàng Khách Hàng",
-      phone: "0903000001",
-      pickupPoint: "Bến xe Mỹ Đình",
-      qrCode: "QR-TRIP1-SEAT-A01-SEC99182",
-      isCheckedIn: false
-    },
-    {
-      id: 2,
-      seat: "A02",
-      name: "Nguyễn Thị Bạn",
-      phone: "0903000002",
-      pickupPoint: "Bến xe Mỹ Đình",
-      qrCode: "QR-TRIP1-SEAT-A02-SEC99183",
-      isCheckedIn: true
-    },
-    {
-      id: 3,
-      seat: "A05",
-      name: "Lê Văn Khách",
-      phone: "0905999888",
-      pickupPoint: "Đón tại Sân bay Nội Bài",
-      qrCode: "QR-TRIP1-SEAT-A05-SEC99184",
-      isCheckedIn: false
-    }
-  ]);
-
+  const [schedule, setSchedule] = useState(null);
+  const [checkedList, setCheckedList] = useState([]);
   const [inputQr, setInputQr] = useState('');
   const [scanMessage, setScanMessage] = useState(null);
+  const [isScanning, setIsScanning] = useState(false);
 
-  // Xử lý quét / nhập mã vé
-  const handleScan = (codeToScan) => {
-    const code = codeToScan || inputQr.trim();
+  useEffect(() => {
+    if (!isOpen) return;
+    getDriverScheduleApi()
+      .then((rows) => {
+        if (rows && rows.length > 0) setSchedule(rows[0]);
+      })
+      .catch(() => {});
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  // Xử lý quét / nhập mã vé thật qua booking-service
+  const handleScan = async (codeToScan) => {
+    const code = (codeToScan || inputQr).trim();
     if (!code) return;
 
-    const found = passengers.find(p => p.qrCode === code || p.seat.toLowerCase() === code.toLowerCase());
-    if (found) {
-      if (found.isCheckedIn) {
-        setScanMessage({ type: 'warning', text: `Ghế ${found.seat} (${found.name}) ĐÃ ĐƯỢC SOÁT VÉ TRƯỚC ĐÓ!` });
-      } else {
-        setPassengers(prev => prev.map(p => p.id === found.id ? { ...p, isCheckedIn: true } : p));
-        setScanMessage({ type: 'success', text: `Soát vé thành công: Ghế ${found.seat} - ${found.name}` });
+    setIsScanning(true);
+    setScanMessage(null);
+    try {
+      const res = await checkInTicketApi(code);
+      const tk = res.data;
+      setScanMessage({ type: 'success', text: res.message });
+      if (tk) {
+        setCheckedList(prev => [
+          {
+            id: tk.id || Date.now(),
+            seat: tk.seat_code,
+            name: tk.passenger_name,
+            qrCode: code,
+            checkedAt: tk.checked_in_at ? new Date(tk.checked_in_at).toLocaleTimeString('vi-VN') : 'Vừa xong'
+          },
+          ...prev.filter(item => item.qrCode !== code)
+        ]);
       }
-    } else {
-      setScanMessage({ type: 'error', text: 'Mã vé không hợp lệ hoặc không thuộc chuyến xe này!' });
+      setInputQr('');
+    } catch (err) {
+      const isAlready = err.message && err.message.includes('check-in trước đó');
+      setScanMessage({
+        type: isAlready ? 'warning' : 'error',
+        text: err.message || 'Mã vé không hợp lệ hoặc không thể check-in!'
+      });
+    } finally {
+      setIsScanning(false);
     }
-    setInputQr('');
   };
 
   return (
@@ -68,7 +67,11 @@ export default function DriverCheckInModal({ isOpen, onClose }) {
             </div>
             <div>
               <h3 className="font-extrabold text-base text-white">Chế độ Tài xế • Soát vé & Điểm danh</h3>
-              <p className="text-xs text-brand-300">Chuyến: Hà Nội ➔ Sa Pa (07:00) • BKS: 29B-998.88</p>
+              <p className="text-xs text-brand-300">
+                {schedule
+                  ? `Chuyến: ${schedule.route_name} (${schedule.departure_time}) • BKS: ${schedule.bus_plate}`
+                  : 'Chuyến: Hà Nội ➔ Sa Pa • BKS: 29B-998.88'}
+              </p>
             </div>
           </div>
           <button
@@ -94,10 +97,29 @@ export default function DriverCheckInModal({ isOpen, onClose }) {
             />
             <button
               type="button"
+              disabled={isScanning}
               onClick={() => handleScan()}
-              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 active:scale-95"
+              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 active:scale-95"
             >
-              <ScanLine className="w-4 h-4" /> Soát vé
+              <ScanLine className="w-4 h-4" /> {isScanning ? 'Đang soát...' : 'Soát vé'}
+            </button>
+          </div>
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <span>Mã vé mẫu trong DB:</span>
+            <button
+              type="button"
+              onClick={() => handleScan('QR-TRIP1-SEAT-A01-SEC99182')}
+              className="px-2 py-0.5 rounded bg-white border border-slate-300 hover:border-brand-500 font-mono text-slate-700"
+            >
+              QR-TRIP1-SEAT-A01-SEC99182
+            </button>
+            <button
+              type="button"
+              onClick={() => handleScan('QR-TRIP1-SEAT-A02-SEC99183')}
+              className="px-2 py-0.5 rounded bg-white border border-slate-300 hover:border-brand-500 font-mono text-slate-700"
+            >
+              QR-TRIP1-SEAT-A02-SEC99183
             </button>
           </div>
 
@@ -113,55 +135,40 @@ export default function DriverCheckInModal({ isOpen, onClose }) {
           )}
         </div>
 
-        {/* Danh sách hành khách trên chuyến */}
+        {/* Lịch sử vé vừa soát thành công */}
         <div className="p-6 space-y-3">
           <div className="flex justify-between items-center mb-1">
             <span className="text-xs font-bold text-slate-600 uppercase">
-              Danh sách hành khách ({passengers.filter(p => p.isCheckedIn).length}/{passengers.length} đã lên xe)
+              Hành khách đã soát vé trong phiên ({checkedList.length})
             </span>
-            <span className="text-xs text-slate-400">Bấm nút để điểm danh thủ công</span>
+            <span className="text-xs text-slate-400">Kết nối trực tiếp Booking Service</span>
           </div>
 
-          {passengers.map(p => (
-            <div 
-              key={p.id}
-              className={`p-4 rounded-xl border flex items-center justify-between transition-all ${
-                p.isCheckedIn 
-                  ? "bg-emerald-50/60 border-emerald-300 text-slate-800" 
-                  : "bg-white border-slate-200 hover:border-slate-300"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className={`w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center ${
-                  p.isCheckedIn ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"
-                }`}>
-                  {p.seat}
-                </span>
-
-                <div>
-                  <span className="font-bold text-sm text-slate-900 block">{p.name}</span>
-                  <span className="text-xs text-slate-500 flex items-center gap-1">
-                    SĐT: {p.phone} • {p.pickupPoint}
+          {checkedList.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              Nhập hoặc dán mã QR từ vé của hành khách để thực hiện check-in lên xe.
+            </p>
+          ) : (
+            checkedList.map(p => (
+              <div
+                key={p.id}
+                className="p-4 rounded-xl border bg-emerald-50/60 border-emerald-300 text-slate-800 flex items-center justify-between transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center bg-emerald-600 text-white">
+                    {p.seat}
                   </span>
+                  <div>
+                    <span className="font-bold text-sm text-slate-900 block">{p.name}</span>
+                    <span className="text-xs text-slate-500 font-mono">{p.qrCode}</span>
+                  </div>
                 </div>
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full bg-emerald-200 text-emerald-900">
+                  <CheckCircle className="w-3.5 h-3.5" /> Đã lên xe ({p.checkedAt})
+                </span>
               </div>
-
-              <div>
-                {p.isCheckedIn ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full bg-emerald-200 text-emerald-900">
-                    <CheckCircle className="w-3.5 h-3.5" /> Đã lên xe
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => handleScan(p.qrCode)}
-                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-brand-600 hover:text-white text-slate-700 font-bold text-xs transition-all border border-slate-300"
-                  >
-                    Điểm danh
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
       </div>

@@ -1,16 +1,56 @@
-import React, { useState, useEffect } from 'react';
-import { X, Clock, ShieldCheck, QrCode, CreditCard, Banknote, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Clock, ShieldCheck, QrCode, CreditCard, CheckCircle2, Tag, AlertCircle } from 'lucide-react';
+import {
+  holdSeatsApi,
+  releaseSeatsApi,
+  createBookingApi,
+  validateVoucherApi,
+  applyVoucherApi,
+  initiatePaymentApi,
+  webhookPaymentApi,
+  sendBookingEmailApi
+} from '../../services/busApi';
 
-export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentSuccess }) {
-  const [fullName, setFullName] = useState("Hoàng Khách Hàng");
-  const [phone, setPhone] = useState("0903000001");
-  const [email, setEmail] = useState("khachhang@gmail.com");
+export default function CheckoutModal({ trip, selectedSeats, currentUser, onClose, onPaymentSuccess }) {
+  const [fullName, setFullName] = useState(currentUser?.fullName || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
   const [pickupPoint, setPickupPoint] = useState(trip.originStation);
-  const [paymentMethod, setPaymentMethod] = useState("QR_VNPAY");
+  const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Mã giảm giá (Voucher Service)
+  const [voucherCode, setVoucherCode] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [voucherMsg, setVoucherMsg] = useState(null);
+
+  const sessionIdRef = useRef(`sess_${currentUser?.id || 'guest'}_${Date.now()}`);
+  const isCompletedRef = useRef(false);
 
   // Countdown timer: 10 phút (600s)
   const [timeLeft, setTimeLeft] = useState(600);
+
+  // Giữ chỗ 10 phút qua booking-service khi mở modal
+  useEffect(() => {
+    holdSeatsApi({
+      trip_id: trip.id,
+      seat_codes: selectedSeats,
+      session_id: sessionIdRef.current
+    }).catch((err) => {
+      setErrorMessage(err.message);
+    });
+
+    return () => {
+      if (!isCompletedRef.current) {
+        releaseSeatsApi({
+          trip_id: trip.id,
+          seat_codes: selectedSeats,
+          session_id: sessionIdRef.current
+        }).catch(() => {});
+      }
+    };
+  }, [trip.id]);
 
   useEffect(() => {
     if (timeLeft <= 0) return;
@@ -24,28 +64,112 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
   const seconds = timeLeft % 60;
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  const totalPrice = selectedSeats.length * trip.price;
+  const rawTotalPrice = selectedSeats.length * trip.price;
+  const discountAmount = appliedVoucher ? appliedVoucher.discount_amount : 0;
+  const finalPrice = Math.max(0, rawTotalPrice - discountAmount);
 
-  const handleSubmit = (e) => {
+  const handleApplyVoucher = async () => {
+    if (!voucherCode.trim()) return;
+    setVoucherMsg(null);
+    try {
+      const res = await validateVoucherApi({
+        code: voucherCode.trim().toUpperCase(),
+        order_amount: rawTotalPrice,
+        route_name: `${trip.originCity} - ${trip.destinationCity} ${trip.destStation}`
+      });
+      setAppliedVoucher(res.data);
+      setVoucherMsg({ type: 'success', text: res.message });
+    } catch (err) {
+      setAppliedVoucher(null);
+      setVoucherMsg({ type: 'error', text: err.message });
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!fullName || !phone || !email) {
-      alert("Vui lòng điền đầy đủ họ tên, số điện thoại và email!");
+    setErrorMessage('');
+    if (!fullName.trim() || !phone.trim() || !email.trim()) {
+      setErrorMessage("Vui lòng điền đầy đủ họ tên, số điện thoại và email!");
       return;
     }
 
     setIsProcessing(true);
-    // Giả lập thanh toán qua Payment Service trong 1.5s
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      // 1. Tạo đơn đặt vé thật qua booking-service
+      const seatPriceAfterDiscount = selectedSeats.length > 0 ? Math.round(finalPrice / selectedSeats.length) : trip.price;
+      const bookingRes = await createBookingApi({
+        trip_id: trip.id,
+        customer_name: fullName.trim(),
+        customer_phone: phone.trim(),
+        customer_email: email.trim(),
+        session_id: sessionIdRef.current,
+        seats: selectedSeats.map(code => ({
+          seat_code: code,
+          passenger_name: fullName.trim(),
+          ticket_price: seatPriceAfterDiscount
+        }))
+      });
+
+      const booking = bookingRes.data;
+      isCompletedRef.current = true;
+
+      // 2. Nếu có dùng voucher -> ghi nhận lượt dùng qua voucher-service
+      if (appliedVoucher) {
+        await applyVoucherApi({
+          code: appliedVoucher.code,
+          booking_code: booking.booking_code,
+          order_amount: rawTotalPrice,
+          route_name: `${trip.originCity} - ${trip.destinationCity} ${trip.destStation}`
+        }).catch(() => {});
+      }
+
+      // 3. Khởi tạo & Xác nhận thanh toán qua payment-service
+      const payMethod = paymentMethod === 'QR_VNPAY' ? 'VNPAY' : 'BANK_TRANSFER';
+      const payInit = await initiatePaymentApi({
+        booking_id: booking.id,
+        booking_code: booking.booking_code,
+        amount: finalPrice,
+        payment_method: payMethod
+      });
+      if (payInit?.data?.payment_id) {
+        await webhookPaymentApi({
+          payment_id: payInit.data.payment_id,
+          transaction_id: `${payMethod}-${Date.now()}`,
+          gateway_status: 'SUCCESS',
+          bank_code: payMethod,
+          amount_paid: finalPrice
+        }).catch(() => {});
+      }
+
+      // 4. Gửi Email vé điện tử kèm QR thật qua notification-service
+      const emailRes = await sendBookingEmailApi({
+        user_id: currentUser?.id || null,
+        booking_code: booking.booking_code,
+        customer_name: fullName.trim(),
+        customer_email: email.trim(),
+        customer_phone: phone.trim(),
+        route_name: `${trip.originStation} → ${trip.destStation}`,
+        departure_time: trip.departureTime,
+        bus_plate: trip.plateNumber,
+        total_amount: finalPrice,
+        tickets: booking.tickets || []
+      }).catch(() => null);
+
       onPaymentSuccess({
-        bookingCode: `BK${new Date().toISOString().slice(0,10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
-        customer: { fullName, phone, email, pickupPoint },
+        bookingCode: booking.booking_code,
+        customer: { fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), pickupPoint },
         trip,
         selectedSeats,
-        totalPrice,
-        paymentMethod
+        totalPrice: finalPrice,
+        paymentMethod: payMethod,
+        tickets: booking.tickets || [],
+        emailPreviewUrl: emailRes?.data?.preview_url || null
       });
-    }, 1200);
+    } catch (err) {
+      setErrorMessage(err.message || 'Có lỗi xảy ra khi đặt vé!');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -70,7 +194,7 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
         <div className="bg-amber-50 border-b border-amber-200/60 px-6 py-2.5 flex items-center justify-between text-amber-800 text-xs font-semibold">
           <div className="flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
-            <span>Ghế của bạn đang được khóa giữ chỗ:</span>
+            <span>Ghế của bạn đang được khóa giữ chỗ trên hệ thống:</span>
           </div>
           <span className="font-mono text-base font-black text-amber-700 bg-white px-2.5 py-0.5 rounded-md border border-amber-200 shadow-xs">
             {formattedTime}
@@ -78,6 +202,13 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+
+          {errorMessage && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
           
           {/* Tóm tắt chuyến & Ghế */}
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80">
@@ -93,8 +224,11 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
                 <span className="font-black text-brand-700 text-sm">{selectedSeats.join(', ')}</span>
               </div>
               <div className="text-right">
-                <span className="text-slate-400 block">Tổng tiền:</span>
-                <span className="font-black text-slate-900 text-base">{totalPrice.toLocaleString('vi-VN')} đ</span>
+                <span className="text-slate-400 block">Tổng thanh toán:</span>
+                {discountAmount > 0 && (
+                  <span className="text-slate-400 line-through mr-1.5">{rawTotalPrice.toLocaleString('vi-VN')} đ</span>
+                )}
+                <span className="font-black text-slate-900 text-base">{finalPrice.toLocaleString('vi-VN')} đ</span>
               </div>
             </div>
           </div>
@@ -156,10 +290,41 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
             </div>
           </div>
 
+          {/* Mã giảm giá (Voucher Service) */}
+          <div>
+            <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-2">
+              2. Mã khuyến mãi (Tùy chọn)
+            </h4>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Tag className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <input
+                  type="text"
+                  value={voucherCode}
+                  onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+                  placeholder="Nhập mã (VD: CHAOBANMOI, VEXETET50, SAPA2026)"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 outline-none text-sm font-semibold uppercase"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyVoucher}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-all"
+              >
+                Áp dụng
+              </button>
+            </div>
+            {voucherMsg && (
+              <p className={`text-xs font-semibold mt-1.5 ${voucherMsg.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {voucherMsg.text}
+              </p>
+            )}
+          </div>
+
           {/* Phương thức thanh toán */}
           <div>
             <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-3">
-              2. Phương thức thanh toán
+              3. Phương thức thanh toán
             </h4>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -209,7 +374,7 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="font-bold text-sm text-slate-800 block">Thẻ ATM / Internet Banking</span>
+                  <span className="font-bold text-sm text-slate-800 block">Chuyển khoản VietQR Napas247</span>
                   <span className="text-[11px] text-slate-500">Miễn phí thanh toán</span>
                 </div>
               </label>
@@ -222,23 +387,23 @@ export default function CheckoutModal({ trip, selectedSeats, onClose, onPaymentS
             <button
               type="submit"
               disabled={isProcessing}
-              className="w-full py-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-black text-base shadow-lg shadow-brand-500/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99]"
+              className="w-full py-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 disabled:opacity-60 text-white font-black text-base shadow-lg shadow-brand-500/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99]"
             >
               {isProcessing ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Đang xử lý giao dịch qua Payment Service...</span>
+                  <span>Đang xử lý đặt vé & thanh toán...</span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>Xác nhận thanh toán {totalPrice.toLocaleString('vi-VN')} đ</span>
+                  <span>Xác nhận thanh toán {finalPrice.toLocaleString('vi-VN')} đ</span>
                 </>
               )}
             </button>
             <p className="text-[11px] text-center text-slate-400 mt-2 flex items-center justify-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-brand-600" />
-              Bảo mật 100% qua cổng Payment Gateway chuẩn quốc tế
+              Kết nối trực tiếp Booking • Voucher • Payment • Notification Service
             </p>
           </div>
 

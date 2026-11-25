@@ -9,34 +9,31 @@ export default function TripReviewsModal({ isOpen, onClose, trip, reviews = [], 
   const [commentText, setCommentText] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // Tính điểm đánh giá trung bình từ danh sách
-  const currentReviews = reviews.length > 0 ? reviews : [
-    { id: 1, userName: "Hoàng Khách Hàng", rating: 5, date: "12/11/2026", comment: "Xe chạy rất êm, bác tài lái cẩn thận, giường nằm sạch sẽ thơm tho!" },
-    { id: 2, userName: "Lê Thị Mai", rating: 5, date: "10/11/2026", comment: "Khởi hành đúng giờ, có nước suối và khăn lạnh miễn phí. Rất hài lòng!" },
-    { id: 3, userName: "Trần Minh Quân", rating: 4, date: "08/11/2026", comment: "Xe mới, wifi ổn định. Điểm cộng là có rèm che cabin riêng tư." }
-  ];
+  // Danh sách đánh giá thực tế từ trip-service
+  const currentReviews = reviews || [];
 
-  const avgScore = (currentReviews.reduce((acc, r) => acc + r.rating, 0) / currentReviews.length).toFixed(1);
+  const avgScore = currentReviews.length > 0
+    ? (currentReviews.reduce((acc, r) => acc + r.rating, 0) / currentReviews.length).toFixed(1)
+    : Number(trip.rating || 5).toFixed(1);
 
-  const handleSubmitReview = (e) => {
+  const handleSubmitReview = async (e) => {
     e.preventDefault();
     if (!commentText.trim()) {
       alert("Vui lòng viết đôi lời nhận xét về chuyến đi!");
       return;
     }
 
-    const reviewObj = {
-      id: Date.now(),
-      userName: currentUser?.fullName || "Khách hàng thân thiết",
-      rating: newRating,
-      date: new Date().toLocaleDateString('vi-VN'),
-      comment: commentText.trim()
-    };
-
-    onAddReview(trip.id, reviewObj);
-    setCommentText('');
-    setIsSubmitted(true);
-    setTimeout(() => setIsSubmitted(false), 3000);
+    try {
+      await onAddReview(trip.id, {
+        rating: newRating,
+        comment: commentText.trim()
+      });
+      setCommentText('');
+      setIsSubmitted(true);
+      setTimeout(() => setIsSubmitted(false), 3000);
+    } catch (err) {
+      alert(err.message || "Không thể gửi đánh giá lúc này!");
+    }
   };
 
   return (

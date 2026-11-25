@@ -1,10 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapPin, Calendar, ArrowRightLeft, Search } from 'lucide-react';
-import { STATIONS } from '../../data/mockData';
+import { getStationsApi } from '../../services/busApi';
 
-export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initialDest = "Sa Pa" }) {
+export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initialDest = "Lào Cai" }) {
+  const [stations, setStations] = useState([]);
   const [origin, setOrigin] = useState(initialOrigin);
   const [destination, setDestination] = useState(initialDest);
+
+  useEffect(() => {
+    getStationsApi()
+      .then((list) => {
+        setStations(list);
+        const citiesList = Array.from(new Set(list.map(s => s.city)));
+        if (citiesList.length >= 2) {
+          if (!citiesList.includes(origin)) setOrigin(citiesList[0]);
+          if (!citiesList.includes(destination)) setDestination(citiesList[1]);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [departDate, setDepartDate] = useState(() => {
     const today = new Date();
     today.setDate(today.getDate() + 1);
@@ -27,7 +41,7 @@ export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initi
   };
 
   // Distinct cities from stations
-  const cities = Array.from(new Set(STATIONS.map(s => s.city)));
+  const cities = Array.from(new Set(stations.map(s => s.city)));
 
   return (
     <div className="w-full max-w-5xl mx-auto -mt-12 relative z-20 px-4">
@@ -53,7 +67,7 @@ export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initi
               ))}
             </select>
             <span className="text-[11px] text-slate-400 block truncate">
-              {STATIONS.find(s => s.city === origin)?.name || "Bến xe trung tâm"}
+              {stations.find(s => s.city === origin)?.name || "Bến xe trung tâm"}
             </span>
           </div>
 
@@ -85,7 +99,7 @@ export default function SearchBar({ onSearch, initialOrigin = "Hà Nội", initi
               ))}
             </select>
             <span className="text-[11px] text-slate-400 block truncate">
-              {STATIONS.find(s => s.city === destination)?.name || "Bến xe trung tâm"}
+              {stations.find(s => s.city === destination)?.name || "Bến xe trung tâm"}
             </span>
           </div>
 

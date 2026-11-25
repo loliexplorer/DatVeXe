@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Navigation, Phone, Gauge, Clock, ShieldCheck, MapPin, Bus, AlertCircle } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { getTripTrackingApi, getTripJourneyLogsApi } from '../../services/busApi';
 
 // Tọa độ tuyến Hà Nội - Sa Pa qua cao tốc Nội Bài - Lào Cai
 const ROUTE_COORDINATES = [
@@ -15,12 +16,31 @@ const ROUTE_COORDINATES = [
 ];
 
 export default function TripTrackingModal({ isOpen, onClose, ticket }) {
-  if (!isOpen) return null;
-
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const [currentStep, setCurrentStep] = useState(2); // Vị trí xe hiện tại (đang giữa Phú Thọ và Yên Bái)
+  const [currentStep, setCurrentStep] = useState(2);
   const [speed, setSpeed] = useState(65);
+  const [trackingInfo, setTrackingInfo] = useState(null);
+  const [journeyLogs, setJourneyLogs] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const tripId = ticket?.tripId || 1;
+    getTripTrackingApi(tripId)
+      .then((data) => {
+        setTrackingInfo(data);
+        if (data?.speed_kmh) setSpeed(data.speed_kmh);
+      })
+      .catch(() => {});
+
+    getTripJourneyLogsApi(tripId)
+      .then((data) => {
+        if (data?.logs) setJourneyLogs(data.logs);
+      })
+      .catch(() => setJourneyLogs([]));
+  }, [isOpen, ticket?.tripId]);
+
+  if (!isOpen) return null;
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -213,37 +233,34 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
                 Tiến độ hành trình
               </h4>
 
-              {/* Timeline các chặng */}
+              {/* Timeline các chặng thực tế từ dispatch-service */}
               <div className="space-y-4 relative pl-5 border-l-2 border-emerald-500 my-4 text-xs">
-                
-                {/* Chặng 1: Bến xe Mỹ Đình */}
-                <div className="relative">
-                  <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white text-white flex items-center justify-center text-[9px] font-bold">
-                    ✓
-                  </span>
-                  <span className="font-bold text-slate-800 block text-xs">Bến xe Mỹ Đình (Hà Nội)</span>
-                  <span className="text-slate-400 block text-[11px]">07:00 • Đã xuất bến đúng giờ</span>
-                </div>
-
-                {/* Chặng 2: Trạm dừng Km117 Phù Ninh */}
-                <div className="relative">
-                  <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-amber-500 border-2 border-white text-white flex items-center justify-center text-[9px] animate-pulse">
-                    ●
-                  </span>
-                  <span className="font-bold text-amber-800 block text-xs">Trạm dừng chân Km117 (Phù Ninh)</span>
-                  <span className="text-slate-500 block text-[11px]">09:15 • Xe đang di chuyển tới (còn 15 phút)</span>
-                </div>
-
-                {/* Chặng 3: Bến xe Sa Pa */}
-                <div className="relative">
-                  <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-slate-300 border-2 border-white"></span>
-                  <span className="font-bold text-slate-600 block text-xs">Bến xe Sa Pa (Lào Cai)</span>
-                  <span className="text-slate-400 block text-[11px]">12:30 (Dự kiến) • Điểm trả khách cuối</span>
-                </div>
-
+                {journeyLogs.length > 0 ? (
+                  journeyLogs.map((log) => (
+                    <div key={log.id} className="relative">
+                      <span className={`absolute -left-[27px] top-0.5 w-4 h-4 rounded-full border-2 border-white text-white flex items-center justify-center text-[9px] font-bold ${
+                        log.event_type === 'INCIDENT' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-600'
+                      }`}>
+                        {log.event_type === 'INCIDENT' ? '!' : '✓'}
+                      </span>
+                      <span className="font-bold text-slate-800 block text-xs">{log.checkpoint_name}</span>
+                      <span className="text-slate-500 block text-[11px]">
+                        {new Date(log.logged_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} • {log.description || log.event_type}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="relative">
+                    <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white text-white flex items-center justify-center text-[9px] font-bold">
+                      ✓
+                    </span>
+                    <span className="font-bold text-slate-800 block text-xs">{ticket?.origin || 'Bến xuất phát'}</span>
+                    <span className="text-slate-400 block text-[11px]">{ticket?.departureTime || '07:00'} • Đang theo dõi lộ trình GPS</span>
+                  </div>
+                )}
               </div>
 
-              {/* Card thông tin tài xế */}
+              {/* Card thông tin tài xế từ trip-service */}
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 mt-6">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
                   Tài xế chuyến xe
@@ -254,8 +271,12 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
                       TL
                     </div>
                     <div>
-                      <span className="font-bold text-slate-900 text-sm block">Trần Văn Lái</span>
-                      <span className="text-[11px] text-slate-500">GPLX Hạng E • 5 năm kn</span>
+                      <span className="font-bold text-slate-900 text-sm block">
+                        {trackingInfo?.driver?.name || 'Trần Văn Lái'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        BKS: {trackingInfo?.plate_number || ticket?.plateNumber || '29B-998.88'}
+                      </span>
                     </div>
                   </div>
 
