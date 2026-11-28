@@ -20,3 +20,6 @@ Thumbs.db
 # Documentation / Markdown notes (theo yeu cau nguoi dung)
 *.md
 */*.md
+
+# Runtime logs from start-all
+logs/
