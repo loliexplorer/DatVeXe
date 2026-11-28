@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const analyticController = require('../controllers/analyticController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware, internalOrAdminMiddleware } = require('../middlewares/authMiddleware');
 const roleMiddleware = require('../middlewares/roleMiddleware');
 
 /**
@@ -102,6 +102,6 @@ router.get('/driver-performance', authMiddleware, roleMiddleware('ADMIN'), analy
  *       200:
  *         description: "Cập nhật số liệu thành công"
  */
-router.post('/record-event', analyticController.recordEvent);
+router.post('/record-event', internalOrAdminMiddleware, analyticController.recordEvent);
 
 module.exports = router;

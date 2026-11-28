@@ -136,6 +136,14 @@ const handleWebhook = async (req, res) => {
     });
   }
 
+  const normalizedStatus = String(gateway_status || '').toUpperCase();
+  if (!['SUCCESS', 'FAILED'].includes(normalizedStatus)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Trạng thái gateway_status không hợp lệ! Phải là SUCCESS hoặc FAILED.'
+    });
+  }
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -159,7 +167,7 @@ const handleWebhook = async (req, res) => {
       });
     }
 
-    const newStatus = (gateway_status && gateway_status.toUpperCase() === 'FAILED') ? 'FAILED' : 'SUCCESS';
+    const newStatus = normalizedStatus;
 
     // Cập nhật trạng thái thanh toán
     await connection.execute(

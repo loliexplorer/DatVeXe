@@ -256,8 +256,8 @@ const createBooking = async (req, res) => {
 
       const [ticketResult] = await connection.execute(
         `INSERT INTO tickets 
-         (booking_id, trip_id, seat_code, passenger_name, ticket_price, qr_code, check_in_status)
-         VALUES (?, ?, ?, ?, ?, ?, 'UNCHECKED')`,
+         (booking_id, trip_id, seat_code, passenger_name, ticket_price, qr_code, check_in_status, seat_active)
+         VALUES (?, ?, ?, ?, ?, ?, 'UNCHECKED', 1)`,
         [bookingId, trip_id, seat.seat_code, passengerName, verifiedSeatPrice, qrCode]
       );
 
@@ -430,9 +430,13 @@ const getBookingDetail = async (req, res) => {
 const cancelBooking = async (req, res) => {
   const { id } = req.params;
 
+  const connection = await pool.getConnection();
   try {
-    const [bookings] = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
+    await connection.beginTransaction();
+
+    const [bookings] = await connection.execute('SELECT * FROM bookings WHERE id = ? FOR UPDATE', [id]);
     if (bookings.length === 0) {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy đơn đặt vé cần hủy!'
@@ -441,6 +445,7 @@ const cancelBooking = async (req, res) => {
 
     const booking = bookings[0];
     if (booking.status === 'CANCELLED') {
+      await connection.rollback();
       return res.status(400).json({
         success: false,
         message: 'Đơn đặt vé này đã được hủy trước đó!'
@@ -449,29 +454,48 @@ const cancelBooking = async (req, res) => {
 
     // Kiểm tra thời hạn được phép hủy/hoàn vé
     if (booking.refundable_until && new Date() > new Date(booking.refundable_until)) {
+      await connection.rollback();
       return res.status(400).json({
         success: false,
         message: 'Đã hết thời hạn hoàn/hủy vé! Đơn vé này đã được chốt và tự động cộng điểm hội viên.'
       });
     }
 
-    // Kiểm tra quyền hủy: Phải là chủ đơn vé hoặc Admin
-    if (req.user && req.user.role !== 'Admin' && booking.user_id && booking.user_id !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền hủy đơn đặt vé của người khác!'
-      });
+    // Kiểm tra quyền hủy: Đơn của thành viên chỉ được hủy bởi chính chủ hoặc Admin (không phân biệt hoa/thường)
+    if (booking.user_id !== null && booking.user_id !== undefined) {
+      if (!req.user) {
+        await connection.rollback();
+        return res.status(401).json({
+          success: false,
+          message: 'Vui lòng đăng nhập để hủy đơn đặt vé của thành viên!'
+        });
+      }
+      const isAdmin = String(req.user.role || '').toUpperCase() === 'ADMIN';
+      if (!isAdmin && Number(booking.user_id) !== Number(req.user.id)) {
+        await connection.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Bạn không có quyền hủy đơn đặt vé của người khác!'
+        });
+      }
     }
 
     // Chính sách hoàn tiền mẫu:
-    // Hoàn 100% nếu hủy trước, tính toán giá trị hoàn
+    // Hoàn 100% nếu hủy trong thời hạn cho phép
     const refundRate = 1.0; // 100%
     const refundAmount = Number(booking.total_amount) * refundRate;
 
-    await pool.execute(
+    await connection.execute(
       'UPDATE bookings SET status = "CANCELLED", updated_at = NOW() WHERE id = ?',
       [id]
     );
+    // Giải phóng ghế để khách khác có thể đặt lại trong cùng transaction (vẫn giữ lịch sử vé)
+    await connection.execute(
+      'UPDATE tickets SET seat_active = NULL WHERE booking_id = ?',
+      [id]
+    );
+
+    await connection.commit();
 
     return res.status(200).json({
       success: true,
@@ -486,10 +510,13 @@ const cancelBooking = async (req, res) => {
       }
     });
   } catch (error) {
+    await connection.rollback();
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi hủy đơn đặt vé: ' + error.message
     });
+  } finally {
+    connection.release();
   }
 };
 

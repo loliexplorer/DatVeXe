@@ -1,7 +1,9 @@
 -- =============================================
--- MASTER INIT SCRIPT: ALL 8 MICROSERVICES DATABASES
--- Run with: mysql -u root --default-character-set=utf8mb4 < database/init_all.sql
+-- MASTER INIT SCRIPT FOR ALL 8 ECOBUS MICROSERVICES DATABASES
+-- Auto-synced from 01_user_db.sql .. 08_analytic_db.sql
 -- =============================================
+
+SET NAMES utf8mb4;
 
 -- =============================================
 -- DATABASE: user_db (User & Auth Service)
@@ -254,10 +256,11 @@ CREATE TABLE `tickets` (
     `ticket_price` DECIMAL(10,2) NOT NULL,
     `qr_code` VARCHAR(255) NOT NULL UNIQUE, -- Chuỗi QR duy nhất
     `check_in_status` ENUM('UNCHECKED', 'CHECKED_IN') DEFAULT 'UNCHECKED',
+    `seat_active` TINYINT NULL DEFAULT 1, -- 1 = ghế đang hiệu lực, NULL = vé đã hủy (cho phép đặt lại ghế)
     `checked_in_at` DATETIME NULL,
     `checked_in_by` INT NULL, -- ID Tài xế đã quét mã (Logic Ref từ user_db)
     CONSTRAINT `fk_ticket_booking` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`) ON DELETE CASCADE,
-    UNIQUE KEY `uk_trip_seat` (`trip_id`, `seat_code`) -- 1 ghế trong 1 chuyến chỉ được có 1 vé hợp lệ
+    UNIQUE KEY `uk_trip_seat` (`trip_id`, `seat_code`, `seat_active`) -- 1 ghế trong 1 chuyến chỉ được có 1 vé đang hiệu lực
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 3. Bảng giữ chỗ tạm thời (khóa ghế trong 10 phút để thanh toán)

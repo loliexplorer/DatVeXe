@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/paymentController');
+const { internalOrAdminMiddleware } = require('../middlewares/authMiddleware');
 
 /**
  * @swagger
@@ -70,7 +71,7 @@ router.post('/webhook', paymentController.handleWebhook);
  *       400:
  *         description: "Giao dịch chưa thanh toán hoặc dữ liệu sai"
  */
-router.post('/refund', paymentController.refundPayment);
+router.post('/refund', internalOrAdminMiddleware, paymentController.refundPayment);
 
 /**
  * @swagger
