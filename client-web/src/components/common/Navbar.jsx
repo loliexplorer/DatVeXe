@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bus, Ticket, ShieldCheck, UserCheck, PhoneCall, LogOut, ScanLine, User } from 'lucide-react';
+import { Bus, BusFront, Ticket, ShieldCheck, UserCheck, PhoneCall, LogOut, ScanLine, User } from 'lucide-react';
 
 export default function Navbar({ 
   currentUser, 
@@ -54,15 +54,24 @@ export default function Navbar({
               Vé của tôi
             </button>
 
-            {/* Nếu là Tài xế ➔ Hiện menu Chế độ tài xế soát vé */}
+            {/* Nếu là Tài xế ➔ Link sang Cổng tài xế (driver.html) + menu Chế độ tài xế soát vé (API thật) */}
             {currentUser?.role === "DRIVER" && (
-              <button
-                onClick={onOpenDriverMode}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 hover:bg-amber-500/30 transition-all font-bold text-xs"
-              >
-                <ScanLine className="w-3.5 h-3.5 text-amber-400" />
-                Chế độ Tài xế (Soát vé)
-              </button>
+              <>
+                <a
+                  href="/driver.html"
+                  className="flex items-center gap-1.5 text-brand-200 hover:text-white transition-colors font-semibold"
+                >
+                  <BusFront className="w-4 h-4 text-brand-400" />
+                  Cổng tài xế
+                </a>
+                <button
+                  onClick={onOpenDriverMode}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 hover:bg-amber-500/30 transition-all font-bold text-xs"
+                >
+                  <ScanLine className="w-3.5 h-3.5 text-amber-400" />
+                  Chế độ Tài xế (Soát vé)
+                </button>
+              </>
             )}
 
             {/* Nếu là Quản trị viên (Admin) ➔ Hiện menu Cổng Quản Trị */}
@@ -75,6 +84,11 @@ export default function Navbar({
                 Cổng Quản Trị (Admin)
               </button>
             )}
+
+            <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-brand-800/80 border border-brand-700/60 text-brand-300">
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
+              Cam kết giữ đúng 100% số ghế
+            </div>
           </nav>
 
           {/* Right Action Buttons */}

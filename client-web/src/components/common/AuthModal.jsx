@@ -112,6 +112,29 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
+  // Nút đăng nhập nhanh mẫu để test đồ án / demo (Gọi API thật lấy JWT thật)
+  const handleQuickLogin = async (roleType) => {
+    setErrorMessage('');
+    const demoAccounts = {
+      CUSTOMER: { email: 'khachhang@gmail.com', password: 'Password123@' },
+      DRIVER: { email: 'driver1@vexere.com', password: 'Password123@' },
+      ADMIN: { email: 'admin@vexere.com', password: 'Password123@' }
+    };
+    const creds = demoAccounts[roleType];
+    if (!creds) return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await loginApi(creds);
+      onLoginSuccess(res.user);
+      onClose();
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
@@ -408,6 +431,39 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                   : (mode === 'register' ? "Đăng ký thành viên" : "Đăng nhập ngay")}
               </span>
             </button>
+
+            {/* Tiện ích đăng nhập mẫu 1-click dành cho chấm bài / demo */}
+            <div className="pt-3 border-t border-slate-100 text-center">
+              <span className="text-[11px] text-slate-400 block mb-2 font-medium">
+                ⚡ Đăng nhập thử nhanh theo từng vai trò (Dành cho kiểm thử):
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("CUSTOMER")}
+                  className="px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-brand-200 text-brand-800 font-bold text-[11px] transition-all"
+                  title="Đăng nhập tài khoản Khách hàng"
+                >
+                  👤 Khách hàng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("DRIVER")}
+                  className="px-2 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold text-[11px] transition-all"
+                  title="Đăng nhập tài khoản Tài xế"
+                >
+                  🚗 Tài xế
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("ADMIN")}
+                  className="px-2 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 font-bold text-[11px] transition-all"
+                  title="Đăng nhập tài khoản Quản trị viên"
+                >
+                  🛡️ Quản trị (Admin)
+                </button>
+              </div>
+            </div>
 
           </form>
         )}

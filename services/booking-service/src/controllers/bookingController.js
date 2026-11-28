@@ -232,6 +232,24 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Kiểm tra ghế đang bị phiên khác giữ chỗ (chỉ phiên đã hold-seats mới được đặt)
+    const [lockedByOthers] = await connection.query(
+      `SELECT seat_code
+       FROM seat_locks
+       WHERE trip_id = ? AND seat_code IN (${placeholders}) AND expires_at > NOW()
+         AND (? IS NULL OR session_id != ?)`,
+      [trip_id, ...seatCodes, session_id || null, session_id || null]
+    );
+
+    if (lockedByOthers.length > 0) {
+      await connection.rollback();
+      const lockedNames = lockedByOthers.map(s => s.seat_code).join(', ');
+      return res.status(409).json({
+        success: false,
+        message: `Ghế [${lockedNames}] đang được người khác giữ chỗ. Vui lòng chọn ghế khác!`
+      });
+    }
+
     // Tạo mã đơn ngẫu nhiên: BK + YYYYMMDD + 4 số ngẫu nhiên
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
