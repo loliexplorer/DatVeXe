@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Navigation, Phone, Gauge, Clock, Bus } from 'lucide-react';
+import { X, Navigation, Phone, Gauge, Clock, Bus, LocateFixed } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTripTrackingApi, getTripJourneyLogsApi } from '../../services/busApi';
@@ -38,7 +38,6 @@ async function fetchOsrmRoadRoute(originLat, originLng, destLat, destLng) {
       throw new Error('Empty OSRM route');
     }
 
-    // GeoJSON là [lng, lat] -> đảo sang [lat, lng] cho Leaflet
     const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
     const result = {
       coords,
@@ -59,6 +58,30 @@ async function fetchOsrmRoadRoute(originLat, originLng, destLat, destLng) {
   }
 }
 
+function calcDistanceKm(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestCoordIndex(coords, lat, lng) {
+  let bestIdx = 0;
+  let minDist = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const d = calcDistanceKm(coords[i][0], coords[i][1], lat, lng);
+    if (d < minDist) {
+      minDist = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
 function formatDuration(minutes) {
   const h = Math.floor(minutes / 60);
   const m = Math.max(0, Math.round(minutes % 60));
@@ -68,18 +91,28 @@ function formatDuration(minutes) {
 
 export default function TripTrackingModal({ isOpen, onClose, ticket }) {
   const mapContainerRef = useRef(null);
-  const [speed, setSpeed] = useState(65);
+  const mapRef = useRef(null);
+  const busMarkerRef = useRef(null);
+  const traveledLineRef = useRef(null);
+  const remainingLineRef = useRef(null);
+  const routeCoordsRef = useRef(FALLBACK_ROUTE_COORDINATES);
+  const routeMetaRef = useRef({ distanceKm: 315, durationMin: 330 });
+  const watchIdRef = useRef(null);
+
+  const [speed, setSpeed] = useState(0);
   const [trackingInfo, setTrackingInfo] = useState(null);
   const [journeyLogs, setJourneyLogs] = useState([]);
+  const [isDeviceGpsActive, setIsDeviceGpsActive] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState('');
   const [routeStats, setRouteStats] = useState({
     totalKm: 315,
-    remainingKm: 132,
-    etaText: '~ 2 giờ 15 phút',
+    remainingKm: 315,
+    etaText: '~ 5 giờ 30 phút',
     isRealRoad: false,
     loadingRoute: true
   });
 
-  // 1. Lấy dữ liệu GPS từ trip-service & Nhật ký hành trình từ dispatch-service
+  // 1. Lấy dữ liệu từ trip-service & dispatch-service
   useEffect(() => {
     if (!isOpen) return;
     const tripId = ticket?.tripId || 1;
@@ -87,7 +120,7 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
     getTripTrackingApi(tripId)
       .then((data) => {
         setTrackingInfo(data);
-        if (data?.speed_kmh) setSpeed(data.speed_kmh);
+        setSpeed(0); // Xe chỉ hiển thị tốc độ thật khi có tín hiệu GPS di chuyển
       })
       .catch(() => {});
 
@@ -98,13 +131,89 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
       .catch(() => setJourneyLogs([]));
   }, [isOpen, ticket?.tripId]);
 
-  // 2. Khởi tạo bản đồ Leaflet 1 lần duy nhất + vẽ đường bám mặt đường thật bằng OSRM
+  // Helper dọn dẹp watchPosition của thiết bị
+  const stopDeviceGps = () => {
+    if (watchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setIsDeviceGpsActive(false);
+  };
+
+  // Bật / Tắt theo dõi GPS thật từ thiết bị người dùng (chỉ di chuyển khi thiết bị di chuyển thật)
+  const handleToggleDeviceGps = () => {
+    if (isDeviceGpsActive) {
+      stopDeviceGps();
+      setSpeed(0);
+      setGpsNotice('Đã tắt GPS thiết bị. Xe đứng yên tại vị trí gần nhất.');
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setGpsNotice('Trình duyệt của bạn không hỗ trợ định vị GPS (Geolocation).');
+      return;
+    }
+
+    setGpsNotice('Đang lấy tọa độ GPS thật từ thiết bị của bạn...');
+    setIsDeviceGpsActive(true);
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude, speed: rawSpeed } = position.coords;
+        const speedKmh = rawSpeed && rawSpeed > 0 ? Math.round(rawSpeed * 3.6) : 0;
+        setSpeed(speedKmh);
+        setGpsNotice(
+          speedKmh > 0
+            ? `GPS trực tiếp: đang di chuyển (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
+            : `GPS trực tiếp: đang đứng yên (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
+        );
+
+        const coords = routeCoordsRef.current;
+        const destCoord = coords[coords.length - 1];
+        const remKm = Math.round(calcDistanceKm(latitude, longitude, destCoord[0], destCoord[1]));
+        const etaMin = speedKmh > 5 ? Math.round((remKm / speedKmh) * 60) : Math.round((remKm / 55) * 60);
+
+        if (busMarkerRef.current) {
+          busMarkerRef.current.setLatLng([latitude, longitude]);
+          busMarkerRef.current.setPopupContent(
+            `<b>Vị trí GPS thiết bị</b><br>Tốc độ: ${speedKmh} km/h<br>(${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
+          );
+        }
+        if (mapRef.current) {
+          mapRef.current.panTo([latitude, longitude], { animate: true });
+        }
+
+        const nearestIdx = findNearestCoordIndex(coords, latitude, longitude);
+        if (traveledLineRef.current) {
+          traveledLineRef.current.setLatLngs(coords.slice(0, nearestIdx + 1));
+        }
+        if (remainingLineRef.current) {
+          remainingLineRef.current.setLatLngs(coords.slice(nearestIdx));
+        }
+
+        setRouteStats(prev => ({
+          ...prev,
+          remainingKm: remKm,
+          etaText: formatDuration(etaMin)
+        }));
+      },
+      (err) => {
+        stopDeviceGps();
+        setGpsNotice(
+          err.code === 1
+            ? 'Bạn đã từ chối quyền truy cập vị trí GPS trên trình duyệt.'
+            : 'Không thể lấy tín hiệu GPS từ thiết bị lúc này.'
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+  };
+
+  // 2. Khởi tạo bản đồ Leaflet 1 lần duy nhất + vẽ lộ trình đường thật bằng OSRM (KHÔNG tự động chạy xe)
   useEffect(() => {
     if (!isOpen || !mapContainerRef.current) return;
 
     let isCancelled = false;
-    let moveInterval = null;
-    let speedInterval = null;
 
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
@@ -114,6 +223,7 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
     });
 
     const map = L.map(mapContainerRef.current).setView([21.65, 104.9], 8);
+    mapRef.current = map;
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -134,75 +244,66 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
       if (isCancelled) return;
 
       const coords = routeData.coords;
-      const startProgressRatio = (trackingInfo?.progress_percent || 45) / 100;
-      let busIndex = Math.min(coords.length - 1, Math.max(1, Math.floor(coords.length * startProgressRatio)));
+      routeCoordsRef.current = coords;
+      routeMetaRef.current = { distanceKm: routeData.distanceKm, durationMin: routeData.durationMin };
+
+      // Đặt xe tại vị trí thực tế gần nhất (từ dispatch logs mới nhất hoặc điểm xuất phát) — ĐỨNG YÊN cho tới khi có GPS mới
+      const latestLogWithCoords = [...journeyLogs].reverse().find(l => l.latitude && l.longitude);
+      const initialIdx = latestLogWithCoords
+        ? findNearestCoordIndex(coords, Number(latestLogWithCoords.latitude), Number(latestLogWithCoords.longitude))
+        : 0;
       const restIndex = Math.floor(coords.length * 0.5);
 
-      const updateTelemetry = (idx) => {
-        const remainRatio = Math.max(0, 1 - idx / Math.max(1, coords.length - 1));
-        const remKm = Math.round(routeData.distanceKm * remainRatio);
-        const remMin = Math.round(routeData.durationMin * remainRatio);
-        setRouteStats({
-          totalKm: routeData.distanceKm,
-          remainingKm: remKm,
-          etaText: formatDuration(remMin),
-          isRealRoad: routeData.isRealRoad,
-          loadingRoute: false
-        });
-      };
+      const remainRatio = Math.max(0, 1 - initialIdx / Math.max(1, coords.length - 1));
+      setRouteStats({
+        totalKm: routeData.distanceKm,
+        remainingKm: Math.round(routeData.distanceKm * remainRatio),
+        etaText: formatDuration(Math.round(routeData.durationMin * remainRatio)),
+        isRealRoad: routeData.isRealRoad,
+        loadingRoute: false
+      });
 
-      // Đoạn đường đã đi qua (nét liền xanh ngọc đậm)
-      const traveledLine = L.polyline(coords.slice(0, busIndex + 1), {
+      const traveledLine = L.polyline(coords.slice(0, initialIdx + 1), {
         color: '#059669',
         weight: 5,
         opacity: 0.95
       }).addTo(map);
+      traveledLineRef.current = traveledLine;
 
-      // Đoạn đường còn lại (nét đứt xanh nhạt)
-      const remainingLine = L.polyline(coords.slice(busIndex), {
+      const remainingLine = L.polyline(coords.slice(initialIdx), {
         color: '#64748b',
         weight: 4,
         opacity: 0.75,
         dashArray: '8, 8'
       }).addTo(map);
+      remainingLineRef.current = remainingLine;
 
-      const fullBounds = L.latLngBounds(coords);
-      map.fitBounds(fullBounds, { padding: [36, 36] });
+      map.fitBounds(L.latLngBounds(coords), { padding: [36, 36] });
 
-      // Marker Điểm đi
       const startIcon = L.divIcon({
         className: 'custom-start-marker',
         html: `<div style="background-color: #064e3b; color: white; border: 2px solid white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">ĐI</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
-      L.marker(coords[0], { icon: startIcon })
-        .addTo(map)
-        .bindPopup(`<b>${originName}</b><br>Điểm xuất phát`);
+      L.marker(coords[0], { icon: startIcon }).addTo(map).bindPopup(`<b>${originName}</b><br>Điểm xuất phát`);
 
-      // Marker Trạm dừng nghỉ giữa tuyến
       const restIcon = L.divIcon({
         className: 'custom-rest-marker',
         html: `<div style="background-color: #f59e0b; color: white; border: 2px solid white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">☕</div>`,
         iconSize: [26, 26],
         iconAnchor: [13, 13],
       });
-      L.marker(coords[restIndex], { icon: restIcon })
-        .addTo(map)
-        .bindPopup('<b>Trạm dừng nghỉ chân cao tốc</b><br>Dừng nghỉ 15–20 phút');
+      L.marker(coords[restIndex], { icon: restIcon }).addTo(map).bindPopup('<b>Trạm dừng nghỉ chân cao tốc</b><br>Dừng nghỉ 15–20 phút');
 
-      // Marker Điểm đến
       const destIcon = L.divIcon({
         className: 'custom-dest-marker',
         html: `<div style="background-color: #dc2626; color: white; border: 2px solid white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">ĐẾN</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
-      L.marker(coords[coords.length - 1], { icon: destIcon })
-        .addTo(map)
-        .bindPopup(`<b>${destName}</b><br>Điểm đến cuối cùng`);
+      L.marker(coords[coords.length - 1], { icon: destIcon }).addTo(map).bindPopup(`<b>${destName}</b><br>Điểm đến cuối cùng`);
 
-      // Marker Xe Bus Live bám sát mặt đường
       const busIcon = L.divIcon({
         className: 'live-bus-marker',
         html: `
@@ -217,37 +318,21 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
         iconAnchor: [16, 16],
       });
 
-      const busMarker = L.marker(coords[busIndex], { icon: busIcon })
+      const busMarker = L.marker(coords[initialIdx], { icon: busIcon })
         .addTo(map)
-        .bindPopup(`<b>Xe ${plate}</b><br>Đang di chuyển bám lộ trình thực tế`)
+        .bindPopup(`<b>Xe ${plate}</b><br>${latestLogWithCoords ? latestLogWithCoords.checkpoint_name : 'Đang chờ tín hiệu GPS di chuyển'}`)
         .openPopup();
-
-      updateTelemetry(busIndex);
-
-      // Cho xe bus di chuyển mượt dọc theo tọa độ đường thật (chỉ gọi setLatLng, không render lại map)
-      const stepStride = Math.max(1, Math.floor(coords.length / 180));
-      moveInterval = setInterval(() => {
-        if (busIndex < coords.length - 1) {
-          busIndex = Math.min(coords.length - 1, busIndex + stepStride);
-          busMarker.setLatLng(coords[busIndex]);
-          traveledLine.setLatLngs(coords.slice(0, busIndex + 1));
-          remainingLine.setLatLngs(coords.slice(busIndex));
-          updateTelemetry(busIndex);
-        }
-      }, 1500);
-
-      speedInterval = setInterval(() => {
-        setSpeed(Math.floor(62 + Math.random() * 8));
-      }, 3000);
+      busMarkerRef.current = busMarker;
     });
 
     return () => {
       isCancelled = true;
-      if (moveInterval) clearInterval(moveInterval);
-      if (speedInterval) clearInterval(speedInterval);
+      stopDeviceGps();
       map.remove();
+      mapRef.current = null;
+      busMarkerRef.current = null;
     };
-  }, [isOpen, trackingInfo?.trip_id]);
+  }, [isOpen, trackingInfo?.trip_id, journeyLogs.length]);
 
   if (!isOpen) return null;
 
@@ -259,14 +344,11 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
         <div className="bg-brand-950 text-white px-6 py-4 flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-brand-500 text-brand-950 flex items-center justify-center font-bold">
-              <Navigation className="w-5 h-5 animate-pulse" />
+              <Navigation className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-extrabold text-base text-white">Theo Dõi Hành Trình Trực Tuyến</h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Live GPS
-                </span>
                 {routeStats.isRealRoad && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-200 border border-sky-400/30">
                     OSRM Road Routing
@@ -279,12 +361,28 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleDeviceGps}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                isDeviceGpsActive
+                  ? 'bg-emerald-500 text-brand-950 border-emerald-300'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+              }`}
+              title="Bật định vị GPS thực tế từ thiết bị của bạn"
+            >
+              <LocateFixed className={`w-3.5 h-3.5 ${isDeviceGpsActive ? 'animate-pulse' : ''}`} />
+              <span>{isDeviceGpsActive ? 'Đang định vị GPS thật' : 'Bật GPS thực tế'}</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Thanh trạng thái nhanh (Telemetry Bar) */}
@@ -338,6 +436,12 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
           {/* Cột Trái: Khung Bản đồ OpenStreetMap Leaflet */}
           <div className="relative flex-1 min-h-[300px] lg:min-h-[420px] bg-slate-200 z-0">
             <div ref={mapContainerRef} className="w-full h-full min-h-[320px] z-0" />
+
+            {gpsNotice && (
+              <div className="absolute top-3 left-14 right-3 z-[400] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow border border-slate-200 text-[11px] font-semibold text-slate-700">
+                {gpsNotice}
+              </div>
+            )}
 
             {routeStats.loadingRoute && (
               <div className="absolute top-3 right-3 z-[400] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow border border-slate-200 text-[11px] font-bold text-brand-700">
