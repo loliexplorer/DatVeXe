@@ -46,6 +46,16 @@ export default function UserProfileModal({
   }, [currentUser, isOpen]);
 
   useEffect(() => {
+    if (isOpen && currentUser) {
+      getProfileApi()
+        .then((freshUser) => {
+          if (onUpdateUser) onUpdateUser(freshUser);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && currentUser && activeTab === 'membership') {
       setLoadingHistory(true);
       getLoyaltyHistoryApi()
@@ -57,11 +67,10 @@ export default function UserProfileModal({
 
   if (!isOpen || !currentUser) return null;
 
-  // Mặc định khách hàng là HỘI VIÊN BẠC (850 điểm / 1500 điểm thăng hạng Vàng)
-  const tier = currentUser.membershipTier || "SILVER";
-  const points = currentUser.loyaltyPoints ?? 850;
-  const maxTierPoints = 1500;
-  const progressPercent = Math.min(100, Math.round((points / maxTierPoints) * 100));
+  const tier = currentUser.membershipTier || "BRONZE";
+  const points = currentUser.loyaltyPoints ?? 0;
+  const maxTierPoints = tier === "BRONZE" ? 500 : 1500;
+  const progressPercent = tier === "GOLD" ? 100 : Math.min(100, Math.round((points / maxTierPoints) * 100));
 
   const maskEmail = (email) => {
     if (!email) return "k********@gmail.com";
@@ -422,7 +431,11 @@ export default function UserProfileModal({
                     />
                   </div>
                   <p className="text-[11px] text-slate-300 mt-2">
-                    ⚡ Tích lũy thêm <strong className="text-white">{1500 - points} điểm</strong> để nhận đặc quyền Hội viên Vàng!
+                    {tier === 'GOLD' ? (
+                      <>🏆 Bạn đã đạt hạng cao nhất <strong className="text-white">Hội viên Vàng (VIP)</strong>!</>
+                    ) : (
+                      <>⚡ Tích lũy thêm <strong className="text-white">{Math.max(0, maxTierPoints - points)} điểm</strong> để thăng hạng {currentTierInfo.nextTier}!</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -436,27 +449,30 @@ export default function UserProfileModal({
                 <div className="space-y-2.5">
                   
                   {/* Cấp 1: HỘI VIÊN ĐỒNG */}
-                  <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 flex items-start gap-3">
+                  <div className={`p-3.5 rounded-xl flex items-start gap-3 ${tier === 'BRONZE' ? 'border-2 border-amber-400 bg-amber-50 shadow-xs' : 'border border-amber-200 bg-amber-50/50'}`}>
                     <span className="text-2xl shrink-0">🥉</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-amber-900">Hội viên Đồng (Bronze)</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-amber-900">Hội viên Đồng (Bronze)</span>
+                          {tier === 'BRONZE' && <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-600 text-white">Cấp của bạn</span>}
+                        </div>
                         <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">0 - 499 điểm</span>
                       </div>
                       <p className="text-xs text-slate-600 mt-1">
-                        • Tích 1% điểm mỗi chuyến đi • Nhận tin khuyến mãi sớm nhất.
+                        • Tích điểm sau khi hết hạn hoàn vé • Nhận tin khuyến mãi sớm nhất.
                       </p>
                     </div>
                   </div>
 
                   {/* Cấp 2: HỘI VIÊN BẠC */}
-                  <div className="p-3.5 rounded-xl border-2 border-slate-300 bg-slate-50 flex items-start gap-3 shadow-xs">
+                  <div className={`p-3.5 rounded-xl flex items-start gap-3 ${tier === 'SILVER' ? 'border-2 border-slate-400 bg-slate-50 shadow-xs' : 'border border-slate-200 bg-slate-50/60'}`}>
                     <span className="text-2xl shrink-0">🥈</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-sm text-slate-900">Hội viên Bạc (Silver)</span>
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-600 text-white">Cấp của bạn</span>
+                          {tier === 'SILVER' && <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-600 text-white">Cấp của bạn</span>}
                         </div>
                         <span className="text-[11px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded">500 - 1.499 điểm</span>
                       </div>
@@ -467,11 +483,14 @@ export default function UserProfileModal({
                   </div>
 
                   {/* Cấp 3: HỘI VIÊN VÀNG */}
-                  <div className="p-3.5 rounded-xl border border-yellow-300 bg-yellow-50/60 flex items-start gap-3">
+                  <div className={`p-3.5 rounded-xl flex items-start gap-3 ${tier === 'GOLD' ? 'border-2 border-yellow-400 bg-yellow-50 shadow-xs' : 'border border-yellow-300 bg-yellow-50/60'}`}>
                     <span className="text-2xl shrink-0">🥇</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-yellow-900">Hội viên Vàng (Gold VIP)</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-yellow-900">Hội viên Vàng (Gold VIP)</span>
+                          {tier === 'GOLD' && <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-600 text-white">Cấp của bạn</span>}
+                        </div>
                         <span className="text-[11px] font-bold text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded">≥ 1.500 điểm</span>
                       </div>
                       <p className="text-xs text-slate-600 mt-1">

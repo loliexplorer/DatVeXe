@@ -78,6 +78,10 @@ export default function MyTicketsModal({
           ) : (
             ticketsList.map(ticket => {
               const isCancelled = ticket.status === 'CANCELLED';
+              const isRefundExpired = ticket.refundableUntil ? new Date() > new Date(ticket.refundableUntil) : false;
+              const refundDeadlineText = ticket.refundableUntil
+                ? new Date(ticket.refundableUntil).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                : null;
 
               return (
                 <div 
@@ -153,16 +157,22 @@ export default function MyTicketsModal({
                     <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                       {!isCancelled && (
                         <>
-                          {/* Nút Hủy vé */}
-                          <button
-                            type="button"
-                            onClick={() => setTicketToCancel(ticket)}
-                            className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 transition-all"
-                            title="Yêu cầu hủy vé và hoàn tiền"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Hủy vé</span>
-                          </button>
+                          {/* Nút Hủy vé (chỉ cho phép khi còn trong hạn hoàn vé) */}
+                          {!isRefundExpired ? (
+                            <button
+                              type="button"
+                              onClick={() => setTicketToCancel(ticket)}
+                              className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 transition-all"
+                              title={refundDeadlineText ? `Được phép hoàn/hủy đến ${refundDeadlineText}` : "Yêu cầu hủy vé và hoàn tiền"}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Hủy vé {refundDeadlineText ? `(trước ${refundDeadlineText})` : ''}</span>
+                            </button>
+                          ) : (
+                            <span className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 font-semibold text-[11px]">
+                              {ticket.pointsAwarded ? '⭐ Đã cộng điểm hội viên' : 'Hết hạn hoàn vé (đang cộng điểm...)'}
+                            </span>
+                          )}
 
                           {/* Nút Theo dõi hành trình */}
                           <button

@@ -173,12 +173,16 @@ const createBooking = async (req, res) => {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const bookingCode = `BK${dateStr}-${randomSuffix}`;
 
+    // Thời hạn cho phép hủy/hoàn vé sau thanh toán (mặc định 15 phút, có thể cấu hình qua REFUND_WINDOW_MINUTES)
+    const refundWindowMinutes = Number(process.env.REFUND_WINDOW_MINUTES) || 15;
+    const refundableUntil = new Date(Date.now() + refundWindowMinutes * 60 * 1000);
+
     // Lưu đơn đặt vé
     const [bookingResult] = await connection.execute(
       `INSERT INTO bookings 
-       (booking_code, user_id, customer_name, customer_phone, customer_email, trip_id, total_seats, total_amount, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED')`,
-      [bookingCode, userId, customer_name, customer_phone, customer_email, trip_id, seats.length, totalAmount]
+       (booking_code, user_id, customer_name, customer_phone, customer_email, trip_id, total_seats, total_amount, status, refundable_until, points_awarded)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, FALSE)`,
+      [bookingCode, userId, customer_name, customer_phone, customer_email, trip_id, seats.length, totalAmount, refundableUntil]
     );
 
     const bookingId = bookingResult.insertId;
@@ -232,6 +236,8 @@ const createBooking = async (req, res) => {
         total_seats: seats.length,
         total_amount: totalAmount,
         status: 'CONFIRMED',
+        refundable_until: refundableUntil,
+        points_awarded: false,
         tickets: generatedTickets
       }
     });
@@ -376,6 +382,14 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Đơn đặt vé này đã được hủy trước đó!'
+      });
+    }
+
+    // Kiểm tra thời hạn được phép hủy/hoàn vé
+    if (booking.refundable_until && new Date() > new Date(booking.refundable_until)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Đã hết thời hạn hoàn/hủy vé! Đơn vé này đã được chốt và tự động cộng điểm hội viên.'
       });
     }
 

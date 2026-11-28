@@ -54,10 +54,10 @@ async function register(req, res) {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Mặc định đăng ký mới là CUSTOMER (role_id = 2), Hạng BRONZE, tặng 500 điểm chào mừng
+    // Mặc định đăng ký mới là CUSTOMER (role_id = 2), Hạng BRONZE, tặng 100 điểm chào mừng
     const defaultRoleId = 2; // 2 = CUSTOMER
     const defaultTier = 'BRONZE';
-    const welcomePoints = 500;
+    const welcomePoints = 100;
 
     const [insertResult] = await pool.query(
       `INSERT INTO users (role_id, full_name, email, phone, password_hash, membership_tier, loyalty_points, is_active)
@@ -70,7 +70,7 @@ async function register(req, res) {
     // Ghi nhận lịch sử tặng điểm chào mừng vào loyalty_history
     await pool.query(
       `INSERT INTO loyalty_history (user_id, points_change, action_type, description)
-       VALUES (?, ?, 'WELCOME_BONUS', 'Thưởng 500 điểm chào mừng thành viên mới kích hoạt tài khoản')`,
+       VALUES (?, ?, 'WELCOME_BONUS', 'Thưởng 100 điểm chào mừng thành viên mới kích hoạt tài khoản')`,
       [newUserId, welcomePoints]
     );
 
@@ -90,7 +90,7 @@ async function register(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'Đăng ký tài khoản thành công! Bạn nhận được 500 điểm thưởng hội viên.',
+      message: 'Đăng ký tài khoản thành công! Bạn nhận được 100 điểm thưởng hội viên.',
       token,
       user: newUserObj
     });

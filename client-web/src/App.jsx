@@ -118,6 +118,8 @@ export default function App() {
           totalPrice: Number(b.total_amount || 0),
           status: b.status,
           statusText: b.status === 'CANCELLED' ? 'Đã hủy & Hoàn tiền' : 'Đã thanh toán',
+          refundableUntil: b.refundable_until || null,
+          pointsAwarded: Boolean(b.points_awarded),
           pickupPoint: matchedTrip?.originStation || 'Tại bến xe',
           qrCodeData: firstQr,
           customerEmail: b.customer_email,

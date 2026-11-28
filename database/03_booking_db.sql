@@ -21,6 +21,8 @@ CREATE TABLE `bookings` (
     `total_seats` INT NOT NULL DEFAULT 1,
     `total_amount` DECIMAL(10,2) NOT NULL,
     `status` ENUM('PENDING', 'CONFIRMED', 'CANCELLED') DEFAULT 'PENDING',
+    `refundable_until` DATETIME NULL, -- Thời hạn cuối được phép hủy/hoàn vé (sau hạn này tự cộng điểm hội viên)
+    `points_awarded` BOOLEAN NOT NULL DEFAULT FALSE,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
