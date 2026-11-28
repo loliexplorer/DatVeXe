@@ -24,7 +24,7 @@ async function fetchOsrmRoadRoute(originLat, originLng, destLat, destLng) {
     return osrmRouteCache.get(cacheKey);
   }
 
-  const url = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=simplified&geometries=geojson`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
