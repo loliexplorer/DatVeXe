@@ -51,35 +51,37 @@ const initiatePayment = async (req, res) => {
       paymentId = insertResult.insertId;
     }
 
-    // Tạo chi tiết thanh toán kèm mã QR VietQR chuẩn ngân hàng
+    // Tạo chi tiết thanh toán kèm mã QR VietQR chuẩn ngân hàng (hỗ trợ MBBank, VPBank, BIDV, Techcombank, VietinBank, MoMo)
+    const bankCode = process.env.BANK_CODE || 'MB';
+    const bankName = process.env.BANK_NAME || 'Ngân hàng Quân Đội (MBBank)';
+    const accountNumber = process.env.BANK_ACCOUNT_NUMBER || '0988776655';
+    const accountName = process.env.BANK_ACCOUNT_NAME || 'CONG TY CP XE KHACH ECOBUS';
+    const transferContent = `VE XE ${booking_code}`;
+    const vietQrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(accountName)}`;
+
     let paymentDetails = {
       payment_id: paymentId,
       booking_id,
       booking_code,
       amount,
       payment_method,
-      status: 'PENDING'
+      status: 'PENDING',
+      supported_qr_apps: ['MBBank', 'VPBank', 'BIDV', 'Techcombank', 'VietinBank', 'MoMo']
     };
 
-    if (payment_method === 'BANK_TRANSFER') {
-      const bankCode = 'MB';
-      const accountNumber = '0988776655';
-      const accountName = 'CONG TY CP XE KHACH ECOBUS';
-      const transferContent = `VE XE ${booking_code}`;
-      const vietQrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(accountName)}`;
-
+    if (payment_method === 'BANK_TRANSFER' || payment_method === 'VNPAY' || payment_method === 'MOMO') {
       paymentDetails.bank_info = {
-        bank_name: 'Ngân hàng Quân Đội (MBBank)',
+        bank_code: bankCode,
+        bank_name: bankName,
         account_number: accountNumber,
         account_name: accountName,
         amount: Number(amount),
         transfer_content: transferContent,
         qr_code_image_url: vietQrUrl
       };
-    } else if (payment_method === 'VNPAY') {
-      paymentDetails.gateway_url = `http://localhost:5004/api/payments/mock-gateway?payment_id=${paymentId}&booking_code=${booking_code}&amount=${amount}&method=VNPAY`;
-    } else if (payment_method === 'MOMO') {
-      paymentDetails.gateway_url = `http://localhost:5004/api/payments/mock-gateway?payment_id=${paymentId}&booking_code=${booking_code}&amount=${amount}&method=MOMO`;
+      if (payment_method === 'VNPAY' || payment_method === 'MOMO') {
+        paymentDetails.gateway_url = `http://localhost:5004/api/payments/mock-gateway?payment_id=${paymentId}&booking_code=${booking_code}&amount=${amount}&method=${payment_method}`;
+      }
     } else if (payment_method === 'CASH') {
       paymentDetails.note = 'Quý khách vui lòng thanh toán trực tiếp tại quầy vé bến xe hoặc khi lên xe cho phụ xe.';
     }
