@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { authenticateToken } = require('../middlewares/authMiddleware');
+const { authenticateToken, authenticateInternalOrAdmin } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
 
 /**
@@ -137,7 +137,7 @@ router.get('/loyalty-history', authenticateToken, userController.getLoyaltyHisto
  *       200:
  *         description: Cập nhật điểm và thăng hạng thành công
  */
-router.post('/loyalty-points', userController.updateLoyaltyPoints);
+router.post('/loyalty-points', authenticateInternalOrAdmin, userController.updateLoyaltyPoints);
 
 /**
  * @swagger

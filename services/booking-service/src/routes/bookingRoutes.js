@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bookingController = require('../controllers/bookingController');
-const { authMiddleware, optionalAuthMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware, optionalAuthMiddleware, internalOrAdminMiddleware } = require('../middlewares/authMiddleware');
 
 /**
  * @swagger
@@ -165,5 +165,25 @@ router.get('/:idOrCode', bookingController.getBookingDetail);
  *         description: "Không có quyền hủy vé của người khác"
  */
 router.patch('/:id/cancel', optionalAuthMiddleware, bookingController.cancelBooking);
+
+/**
+ * @swagger
+ * /api/bookings/{id}/confirm:
+ *   patch:
+ *     summary: "(Nội bộ / Admin) Xác nhận đơn đặt vé từ PENDING sang CONFIRMED sau khi thanh toán thành công"
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: "Xác nhận đơn vé thành công"
+ */
+router.patch('/:id/confirm', internalOrAdminMiddleware, bookingController.confirmBooking);
 
 module.exports = router;

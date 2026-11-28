@@ -184,10 +184,29 @@ const handleWebhook = async (req, res) => {
 
     await connection.commit();
 
+    // Nếu thanh toán thành công -> tự động gọi nội bộ sang booking-service chuyển đơn PENDING -> CONFIRMED
+    let bookingConfirmed = false;
+    if (newStatus === 'SUCCESS' && currentPayment.booking_id) {
+      const bookingServiceUrl = process.env.BOOKING_SERVICE_URL || 'http://localhost:5003';
+      try {
+        const confirmResp = await fetch(`${bookingServiceUrl}/api/bookings/${currentPayment.booking_id}/confirm`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-internal-key': process.env.INTERNAL_SERVICE_KEY || 'EcoBusInternalServiceSecret2026!@#'
+          }
+        });
+        bookingConfirmed = confirmResp.ok;
+      } catch (err) {
+        console.warn(`⚠️ [payment-service] Could not auto-confirm booking #${currentPayment.booking_id}:`, err.message);
+      }
+    }
+
     const [updated] = await pool.execute('SELECT * FROM payments WHERE id = ?', [payment_id]);
     return res.status(200).json({
       success: true,
       message: 'Xử lý Webhook thanh toán thành công! Trạng thái: ' + newStatus,
+      booking_confirmed: bookingConfirmed,
       data: updated[0]
     });
   } catch (error) {

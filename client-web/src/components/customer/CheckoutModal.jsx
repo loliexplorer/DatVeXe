@@ -127,21 +127,21 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
     setIsProcessing(true);
     setErrorMessage('');
     try {
-      const seatPriceAfterDiscount = selectedSeats.length > 0 ? Math.round(finalPrice / selectedSeats.length) : trip.price;
       const bookingRes = await createBookingApi({
         trip_id: trip.id,
         customer_name: fullName.trim(),
         customer_phone: phone.trim(),
         customer_email: email.trim(),
         session_id: sessionIdRef.current,
+        voucher_code: appliedVoucher?.code || null,
         seats: selectedSeats.map(code => ({
           seat_code: code,
-          passenger_name: fullName.trim(),
-          ticket_price: seatPriceAfterDiscount
+          passenger_name: fullName.trim()
         }))
       });
 
       const booking = bookingRes.data;
+      const verifiedTotal = Number(booking.total_amount ?? finalPrice);
       isCompletedRef.current = true;
 
       if (appliedVoucher) {

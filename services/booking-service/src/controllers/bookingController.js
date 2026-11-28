@@ -119,7 +119,7 @@ const releaseSeats = async (req, res) => {
   }
 };
 
-// 3. Tạo đơn đặt vé mới (Booking & Xuất vé QR)
+// 3. Tạo đơn đặt vé mới (Booking ở trạng thái PENDING & Server tự tính giá thật từ trip-service + voucher-service)
 const createBooking = async (req, res) => {
   const {
     trip_id,
@@ -127,7 +127,8 @@ const createBooking = async (req, res) => {
     customer_phone,
     customer_email,
     seats,
-    session_id
+    session_id,
+    voucher_code
   } = req.body;
 
   if (!trip_id || !customer_name || !customer_phone || !customer_email || !Array.isArray(seats) || seats.length === 0) {
@@ -139,7 +140,71 @@ const createBooking = async (req, res) => {
 
   const userId = req.user ? req.user.id : null;
   const seatCodes = seats.map(s => s.seat_code);
-  const totalAmount = seats.reduce((sum, s) => sum + Number(s.ticket_price || 0), 0);
+
+  // 3.1. Lấy giá vé gốc thực tế từ trip-service (KHÔNG tin ticket_price gửi từ client)
+  const tripServiceUrl = process.env.TRIP_SERVICE_URL || 'http://localhost:5002';
+  let realUnitPrice = 0;
+  let routeLabel = '';
+  try {
+    const tripResp = await fetch(`${tripServiceUrl}/api/trips/${trip_id}`);
+    if (!tripResp.ok) {
+      return res.status(tripResp.status === 404 ? 404 : 502).json({
+        success: false,
+        message: tripResp.status === 404 ? 'Chuyến xe không tồn tại trên hệ thống!' : 'Không thể xác thực giá vé từ trip-service!'
+      });
+    }
+    const tripJson = await tripResp.json();
+    const tripData = tripJson?.data;
+    realUnitPrice = Number(tripData?.price || 0);
+    routeLabel = `${tripData?.origin_city || ''} - ${tripData?.destination_city || ''} ${tripData?.dest_station || ''}`.trim();
+    if (!realUnitPrice || realUnitPrice <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Giá vé chuyến xe không hợp lệ!'
+      });
+    }
+  } catch (err) {
+    return res.status(502).json({
+      success: false,
+      message: 'Không thể kết nối trip-service để xác thực giá vé: ' + err.message
+    });
+  }
+
+  const rawTotalAmount = realUnitPrice * seats.length;
+  let totalAmount = rawTotalAmount;
+  let discountAmount = 0;
+
+  // 3.2. Nếu có mã giảm giá -> xác thực mức giảm thật qua voucher-service
+  if (voucher_code && String(voucher_code).trim() !== '') {
+    const voucherServiceUrl = process.env.VOUCHER_SERVICE_URL || 'http://localhost:5006';
+    try {
+      const vResp = await fetch(`${voucherServiceUrl}/api/vouchers/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: String(voucher_code).trim().toUpperCase(),
+          order_amount: rawTotalAmount,
+          route_name: routeLabel
+        })
+      });
+      const vJson = await vResp.json().catch(() => ({}));
+      if (!vResp.ok || !vJson.success) {
+        return res.status(vResp.status || 400).json({
+          success: false,
+          message: vJson.message || 'Mã giảm giá không hợp lệ!'
+        });
+      }
+      discountAmount = Number(vJson.data?.discount_amount || 0);
+      totalAmount = Number(vJson.data?.final_amount ?? Math.max(0, rawTotalAmount - discountAmount));
+    } catch (err) {
+      return res.status(502).json({
+        success: false,
+        message: 'Không thể kết nối voucher-service để xác thực mã giảm giá!'
+      });
+    }
+  }
+
+  const verifiedSeatPrice = Math.round(totalAmount / seats.length);
 
   const connection = await pool.getConnection();
   try {
@@ -173,32 +238,27 @@ const createBooking = async (req, res) => {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const bookingCode = `BK${dateStr}-${randomSuffix}`;
 
-    // Thời hạn cho phép hủy/hoàn vé sau thanh toán (mặc định 15 phút, có thể cấu hình qua REFUND_WINDOW_MINUTES)
-    const refundWindowMinutes = Number(process.env.REFUND_WINDOW_MINUTES) || 15;
-    const refundableUntil = new Date(Date.now() + refundWindowMinutes * 60 * 1000);
-
-    // Lưu đơn đặt vé
+    // Lưu đơn đặt vé ở trạng thái PENDING (chờ payment-service webhook xác nhận sang CONFIRMED)
     const [bookingResult] = await connection.execute(
       `INSERT INTO bookings 
        (booking_code, user_id, customer_name, customer_phone, customer_email, trip_id, total_seats, total_amount, status, refundable_until, points_awarded)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, FALSE)`,
-      [bookingCode, userId, customer_name, customer_phone, customer_email, trip_id, seats.length, totalAmount, refundableUntil]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NULL, FALSE)`,
+      [bookingCode, userId, customer_name, customer_phone, customer_email, trip_id, seats.length, totalAmount]
     );
 
     const bookingId = bookingResult.insertId;
     const generatedTickets = [];
 
-    // Tạo vé và QR code cho từng ghế
+    // Tạo vé và QR code cho từng ghế với đơn giá đã xác thực trên Server
     for (const seat of seats) {
       const qrCode = `QR-TRIP${trip_id}-${seat.seat_code}-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
       const passengerName = seat.passenger_name || customer_name;
-      const ticketPrice = Number(seat.ticket_price || 0);
 
       const [ticketResult] = await connection.execute(
         `INSERT INTO tickets 
          (booking_id, trip_id, seat_code, passenger_name, ticket_price, qr_code, check_in_status)
          VALUES (?, ?, ?, ?, ?, ?, 'UNCHECKED')`,
-        [bookingId, trip_id, seat.seat_code, passengerName, ticketPrice, qrCode]
+        [bookingId, trip_id, seat.seat_code, passengerName, verifiedSeatPrice, qrCode]
       );
 
       generatedTickets.push({
@@ -206,13 +266,13 @@ const createBooking = async (req, res) => {
         booking_id: bookingId,
         seat_code: seat.seat_code,
         passenger_name: passengerName,
-        ticket_price: ticketPrice,
+        ticket_price: verifiedSeatPrice,
         qr_code: qrCode,
         check_in_status: 'UNCHECKED'
       });
     }
 
-    // Xóa khóa ghế sau khi đặt thành công
+    // Xóa khóa ghế sau khi tạo đơn
     if (session_id) {
       await connection.query(
         `DELETE FROM seat_locks WHERE trip_id = ? AND session_id = ? AND seat_code IN (${placeholders})`,
@@ -224,7 +284,7 @@ const createBooking = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Đặt vé thành công! Mã đơn hàng: ' + bookingCode,
+      message: 'Tạo đơn đặt vé thành công (Chờ thanh toán)! Mã đơn: ' + bookingCode,
       data: {
         id: bookingId,
         booking_code: bookingCode,
@@ -234,9 +294,11 @@ const createBooking = async (req, res) => {
         customer_email,
         trip_id,
         total_seats: seats.length,
+        original_amount: rawTotalAmount,
+        discount_amount: discountAmount,
         total_amount: totalAmount,
-        status: 'CONFIRMED',
-        refundable_until: refundableUntil,
+        status: 'PENDING',
+        refundable_until: null,
         points_awarded: false,
         tickets: generatedTickets
       }
@@ -474,6 +536,55 @@ const getOccupiedSeatsByTrip = async (req, res) => {
   }
 };
 
+// 8. (Nội bộ từ payment-service) Xác nhận đơn vé từ PENDING -> CONFIRMED và kích hoạt thời hạn hoàn vé
+const confirmBooking = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [bookings] = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy đơn đặt vé cần xác nhận!'
+      });
+    }
+
+    const booking = bookings[0];
+    if (booking.status === 'CANCELLED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Không thể xác nhận đơn vé đã bị hủy!'
+      });
+    }
+
+    const refundWindowMinutes = Number(process.env.REFUND_WINDOW_MINUTES) || 15;
+    const refundableUntil = booking.refundable_until
+      ? new Date(booking.refundable_until)
+      : new Date(Date.now() + refundWindowMinutes * 60 * 1000);
+
+    await pool.execute(
+      'UPDATE bookings SET status = "CONFIRMED", refundable_until = ?, updated_at = NOW() WHERE id = ?',
+      [refundableUntil, id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Đã xác nhận thanh toán cho đơn vé ${booking.booking_code} (CONFIRMED)!`,
+      data: {
+        id: booking.id,
+        booking_code: booking.booking_code,
+        status: 'CONFIRMED',
+        refundable_until: refundableUntil
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xác nhận đơn vé: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   holdSeats,
   releaseSeats,
@@ -481,5 +592,6 @@ module.exports = {
   getMyBookings,
   getBookingDetail,
   cancelBooking,
-  getOccupiedSeatsByTrip
+  getOccupiedSeatsByTrip,
+  confirmBooking
 };

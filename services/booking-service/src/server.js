@@ -68,7 +68,10 @@ async function settleExpiredRefundPoints() {
       try {
         const resp = await fetch(`${userServiceUrl}/api/users/loyalty-points`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-internal-key': process.env.INTERNAL_SERVICE_KEY || 'EcoBusInternalServiceSecret2026!@#'
+          },
           body: JSON.stringify({
             user_id: b.user_id,
             points_change: earnedPoints,
