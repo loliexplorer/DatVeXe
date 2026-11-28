@@ -29,6 +29,7 @@ const paymentController = require('../controllers/paymentController');
  *       409:
  *         description: "Đơn đặt vé đã thanh toán trước đó"
  */
+router.get('/bank-info', paymentController.getBankInfoPreview);
 router.post('/initiate', paymentController.initiatePayment);
 
 /**

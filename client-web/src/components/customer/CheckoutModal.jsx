@@ -6,19 +6,11 @@ import {
   createBookingApi,
   validateVoucherApi,
   applyVoucherApi,
+  getPaymentBankInfoApi,
   initiatePaymentApi,
   webhookPaymentApi,
   sendBookingEmailApi
 } from '../../services/busApi';
-
-const SUPPORTED_QR_APPS = [
-  { id: 'MBBank', name: 'MBBank', badge: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-600' },
-  { id: 'VPBank', name: 'VPBank', badge: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-600' },
-  { id: 'BIDV', name: 'BIDV', badge: 'bg-teal-50 text-teal-800 border-teal-200', dot: 'bg-teal-600' },
-  { id: 'Techcombank', name: 'Techcombank', badge: 'bg-rose-50 text-rose-800 border-rose-200', dot: 'bg-rose-600' },
-  { id: 'VietinBank', name: 'VietinBank', badge: 'bg-sky-50 text-sky-800 border-sky-200', dot: 'bg-sky-600' },
-  { id: 'MoMo', name: 'Ví MoMo', badge: 'bg-pink-50 text-pink-800 border-pink-200', dot: 'bg-pink-600' }
-];
 
 export default function CheckoutModal({ trip, selectedSeats, currentUser, onClose, onPaymentSuccess }) {
   const [step, setStep] = useState('FORM'); // 'FORM' | 'PAY'
@@ -27,13 +19,12 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
   const [email, setEmail] = useState(currentUser?.email || '');
   const [pickupPoint, setPickupPoint] = useState(trip.originStation);
   const [paymentMethod, setPaymentMethod] = useState('QR_PAYMENT'); // 'QR_PAYMENT' | 'BANK_TRANSFER'
-  const [selectedQrApp, setSelectedQrApp] = useState('MBBank');
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Dữ liệu đơn & thanh toán đã khởi tạo ở Bước 2
-  const [pendingBooking, setPendingBooking] = useState(null);
-  const [paymentInfo, setPaymentInfo] = useState(null);
+  // Thông tin xem trước QR / Chuyển khoản (KHÔNG tạo đơn trong DB cho tới khi bấm xác nhận thanh toán)
+  const [draftCode] = useState(() => `BK${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [bankInfo, setBankInfo] = useState(null);
   const [copiedKey, setCopiedKey] = useState('');
 
   // Mã giảm giá (Voucher Service)
@@ -47,7 +38,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
   // Countdown timer: 10 phút (600s)
   const [timeLeft, setTimeLeft] = useState(600);
 
-  // Giữ chỗ 10 phút qua booking-service khi mở modal
+  // Giữ chỗ 10 phút qua booking-service khi mở modal; đóng modal trước khi thanh toán sẽ tự nhả ghế
   useEffect(() => {
     holdSeatsApi({
       trip_id: trip.id,
@@ -107,7 +98,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
     }
   };
 
-  // Bước 1 -> Bước 2: Tạo đơn vé & Khởi tạo mã VietQR / Thông tin chuyển khoản MB Bank
+  // Bước 1 -> Bước 2: Chỉ lấy thông tin QR / MB Bank để hiển thị (CHƯA ghi đơn vào booking_db)
   const handleProceedToPayment = async (e) => {
     e.preventDefault();
     setErrorMessage('');
@@ -117,6 +108,24 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
     }
 
     setIsProcessing(true);
+    try {
+      const preview = await getPaymentBankInfoApi({
+        booking_code: draftCode,
+        amount: finalPrice
+      });
+      setBankInfo(preview.data);
+      setStep('PAY');
+    } catch (err) {
+      setErrorMessage(err.message || 'Không thể tải thông tin thanh toán!');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Bước 2 -> Hoàn tất: Chỉ khi bấm "Tôi đã thanh toán" mới tạo đơn thật + xác nhận thanh toán + gửi email QR
+  const handleConfirmPaid = async () => {
+    setIsProcessing(true);
+    setErrorMessage('');
     try {
       const seatPriceAfterDiscount = selectedSeats.length > 0 ? Math.round(finalPrice / selectedSeats.length) : trip.price;
       const bookingRes = await createBookingApi({
@@ -144,45 +153,26 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
         }).catch(() => {});
       }
 
-      const backendMethod = paymentMethod === 'QR_PAYMENT'
-        ? (selectedQrApp === 'MoMo' ? 'MOMO' : 'BANK_TRANSFER')
-        : 'BANK_TRANSFER';
-
       const payInit = await initiatePaymentApi({
         booking_id: booking.id,
         booking_code: booking.booking_code,
         amount: finalPrice,
-        payment_method: backendMethod
+        payment_method: 'BANK_TRANSFER'
       });
 
-      setPendingBooking(booking);
-      setPaymentInfo(payInit.data);
-      setStep('PAY');
-    } catch (err) {
-      setErrorMessage(err.message || 'Có lỗi xảy ra khi khởi tạo thanh toán!');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Bước 2 -> Hoàn tất: Xác nhận đã chuyển khoản / quét QR (gọi webhook + gửi Email vé QR)
-  const handleConfirmPaid = async () => {
-    if (!pendingBooking || !paymentInfo) return;
-    setIsProcessing(true);
-    setErrorMessage('');
-    try {
-      const bankTag = paymentMethod === 'QR_PAYMENT' ? selectedQrApp.toUpperCase() : 'MBBANK';
-      await webhookPaymentApi({
-        payment_id: paymentInfo.payment_id,
-        transaction_id: `${bankTag}-${Date.now()}`,
-        gateway_status: 'SUCCESS',
-        bank_code: bankTag,
-        amount_paid: finalPrice
-      });
+      if (payInit?.data?.payment_id) {
+        await webhookPaymentApi({
+          payment_id: payInit.data.payment_id,
+          transaction_id: `MB-${Date.now()}`,
+          gateway_status: 'SUCCESS',
+          bank_code: 'MBBANK',
+          amount_paid: finalPrice
+        }).catch(() => {});
+      }
 
       const emailRes = await sendBookingEmailApi({
         user_id: currentUser?.id || null,
-        booking_code: pendingBooking.booking_code,
+        booking_code: booking.booking_code,
         customer_name: fullName.trim(),
         customer_email: email.trim(),
         customer_phone: phone.trim(),
@@ -190,27 +180,25 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
         departure_time: trip.departureTime,
         bus_plate: trip.plateNumber,
         total_amount: finalPrice,
-        tickets: pendingBooking.tickets || []
+        tickets: booking.tickets || []
       }).catch(() => null);
 
       onPaymentSuccess({
-        bookingCode: pendingBooking.booking_code,
+        bookingCode: booking.booking_code,
         customer: { fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), pickupPoint },
         trip,
         selectedSeats,
         totalPrice: finalPrice,
-        paymentMethod: paymentMethod === 'QR_PAYMENT' ? `QR (${selectedQrApp})` : 'Chuyển khoản MB Bank',
-        tickets: pendingBooking.tickets || [],
+        paymentMethod: paymentMethod === 'QR_PAYMENT' ? 'Quét mã VietQR' : 'Chuyển khoản MB Bank',
+        tickets: booking.tickets || [],
         emailPreviewUrl: emailRes?.data?.preview_url || null
       });
     } catch (err) {
-      setErrorMessage(err.message || 'Không thể xác nhận giao dịch lúc này!');
+      setErrorMessage(err.message || 'Không thể xác nhận thanh toán lúc này!');
     } finally {
       setIsProcessing(false);
     }
   };
-
-  const bankInfo = paymentInfo?.bank_info;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
@@ -220,12 +208,14 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
         <div className="sticky top-0 bg-white/95 backdrop-blur-md px-6 py-4 border-b border-slate-100 flex items-center justify-between z-10">
           <div>
             <h3 className="font-extrabold text-lg text-slate-900">
-              {step === 'FORM' ? 'Xác nhận thông tin & Chọn thanh toán' : 'Thanh toán đơn vé xe'}
+              {step === 'FORM'
+                ? 'Xác nhận thông tin & Chọn thanh toán'
+                : (paymentMethod === 'QR_PAYMENT' ? 'Quét mã VietQR thanh toán' : 'Chuyển khoản ngân hàng MB Bank')}
             </h3>
             <p className="text-xs text-slate-500">
               {step === 'FORM'
                 ? 'Hoàn tất đặt vé trong vòng 10 phút để giữ chỗ'
-                : `Mã đơn hàng: ${pendingBooking?.booking_code || ''}`}
+                : `Tổng thanh toán: ${finalPrice.toLocaleString('vi-VN')} đ • Ghế: ${selectedSeats.join(', ')}`}
             </p>
           </div>
           <button
@@ -374,7 +364,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
               </h4>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Option 1: Quét mã QR đa ngân hàng & MoMo */}
+                {/* Option 1: Quét mã QR */}
                 <label
                   className={`p-3.5 rounded-xl border-2 flex items-center gap-3 cursor-pointer transition-all ${
                     paymentMethod === 'QR_PAYMENT'
@@ -394,11 +384,11 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
                   </div>
                   <div>
                     <span className="font-bold text-sm text-slate-800 block">Thanh toán quét mã QR</span>
-                    <span className="text-[11px] text-slate-500">Hỗ trợ MB, VP, BIDV, TCB, Vietin, MoMo</span>
+                    <span className="text-[11px] text-slate-500">Hỗ trợ MBBank, VPBank, BIDV, Techcombank, VietinBank, MoMo</span>
                   </div>
                 </label>
 
-                {/* Option 2: Chuyển khoản trực tiếp về MB Bank */}
+                {/* Option 2: Chuyển khoản MB Bank */}
                 <label
                   className={`p-3.5 rounded-xl border-2 flex items-center gap-3 cursor-pointer transition-all ${
                     paymentMethod === 'BANK_TRANSFER'
@@ -424,7 +414,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
               </div>
             </div>
 
-            {/* Nút tiếp tục sang màn hình QR / Chuyển khoản */}
+            {/* Nút tiếp tục sang bước 2 */}
             <div className="pt-2">
               <button
                 type="submit"
@@ -434,11 +424,11 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
                 {isProcessing ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Đang tạo mã thanh toán...</span>
+                    <span>Đang chuẩn bị thanh toán...</span>
                   </>
                 ) : (
                   <>
-                    <QrCode className="w-5 h-5" />
+                    {paymentMethod === 'QR_PAYMENT' ? <QrCode className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
                     <span>Tiếp tục thanh toán {finalPrice.toLocaleString('vi-VN')} đ</span>
                   </>
                 )}
@@ -450,47 +440,45 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
             </div>
           </form>
         ) : (
-          /* BƯỚC 2: HIỂN THỊ MÃ VIETQR THẬT & THÔNG TIN CHUYỂN KHOẢN MB BANK */
+          /* BƯỚC 2: TÁCH RIÊNG RÕ RÀNG — CHỈ HIỆN VIETQR HOẶC CHỈ HIỆN CHUYỂN KHOẢN MB BANK */
           <div className="p-6 space-y-5 animate-fadeIn">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
-              {/* Cột trái: Ảnh mã VietQR động */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 mb-3">
-                  <QrCode className="w-3.5 h-3.5" />
-                  {paymentMethod === 'QR_PAYMENT' ? 'Quét mã VietQR để thanh toán' : 'Quét nhanh VietQR MB Bank'}
+            {paymentMethod === 'QR_PAYMENT' ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center max-w-md mx-auto">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 mb-4">
+                  <QrCode className="w-3.5 h-3.5" /> Quét mã VietQR để thanh toán
                 </span>
 
                 {bankInfo?.qr_code_image_url && (
                   <img
                     src={bankInfo.qr_code_image_url}
                     alt="VietQR MB Bank"
-                    className="w-60 h-auto mx-auto rounded-xl border border-slate-200 bg-white shadow-sm"
+                    className="w-64 h-auto mx-auto rounded-xl border border-slate-200 bg-white shadow-sm"
                   />
                 )}
 
-                <p className="text-[11px] text-slate-500 mt-2.5">
-                  Hỗ trợ quét bởi: <strong>MBBank, VPBank, BIDV, Techcombank, VietinBank, MoMo</strong>
+                <p className="text-xs text-slate-600 mt-4 leading-relaxed">
+                  Hỗ trợ quét trực tiếp bởi:<br />
+                  <strong className="text-slate-900">MBBank, VPBank, BIDV, Techcombank, VietinBank, MoMo</strong>
                 </p>
               </div>
-
-              {/* Cột phải: Thông tin chuyển khoản MB Bank có nút Copy */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-sm text-slate-800 uppercase tracking-wider">
+            ) : (
+              <div className="max-w-lg mx-auto space-y-3">
+                <h4 className="font-extrabold text-sm text-slate-800 uppercase tracking-wider text-center">
                   Thông tin chuyển khoản MB Bank
                 </h4>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3.5 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
                     <span className="text-slate-500">Ngân hàng</span>
-                    <span className="font-bold text-slate-900">{bankInfo?.bank_name || 'MBBank'}</span>
+                    <span className="font-bold text-slate-900">{bankInfo?.bank_name || 'Ngân hàng Quân Đội (MBBank)'}</span>
                   </div>
 
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
                     <span className="text-slate-500">Chủ tài khoản</span>
                     <span className="font-bold text-slate-900">{bankInfo?.account_name}</span>
                   </div>
 
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
                     <div>
                       <span className="text-slate-500 block">Số tài khoản</span>
                       <span className="font-mono font-black text-base text-brand-700">{bankInfo?.account_number}</span>
@@ -505,7 +493,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
                     <div>
                       <span className="text-slate-500 block">Số tiền</span>
                       <span className="font-mono font-black text-base text-rose-600">
@@ -538,15 +526,18 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => {
+                  setErrorMessage('');
+                  setStep('FORM');
+                }}
                 className="px-4 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5"
               >
-                <ArrowLeft className="w-4 h-4" /> Để sau
+                <ArrowLeft className="w-4 h-4" /> Quay lại
               </button>
               <button
                 type="button"

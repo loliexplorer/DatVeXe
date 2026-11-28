@@ -1,5 +1,30 @@
 const pool = require('../config/db');
 
+// 0. Lấy thông tin ngân hàng & link VietQR động (chưa tạo giao dịch trong DB)
+const getBankInfoPreview = (req, res) => {
+  const { booking_code = 'ECOBUS', amount = 0 } = req.query;
+  const bankCode = process.env.BANK_CODE || 'MB';
+  const bankName = process.env.BANK_NAME || 'Ngân hàng Quân Đội (MBBank)';
+  const accountNumber = process.env.BANK_ACCOUNT_NUMBER || '0988776655';
+  const accountName = process.env.BANK_ACCOUNT_NAME || 'CONG TY CP XE KHACH ECOBUS';
+  const transferContent = `VE XE ${booking_code}`;
+  const vietQrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(accountName)}`;
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      bank_code: bankCode,
+      bank_name: bankName,
+      account_number: accountNumber,
+      account_name: accountName,
+      amount: Number(amount),
+      transfer_content: transferContent,
+      qr_code_image_url: vietQrUrl,
+      supported_qr_apps: ['MBBank', 'VPBank', 'BIDV', 'Techcombank', 'VietinBank', 'MoMo']
+    }
+  });
+};
+
 // 1. Khởi tạo thanh toán & Tạo mã QR VietQR / Link cổng thanh toán
 const initiatePayment = async (req, res) => {
   const { booking_id, booking_code, amount, payment_method } = req.body;
@@ -304,6 +329,7 @@ const getPaymentLogs = async (req, res) => {
 };
 
 module.exports = {
+  getBankInfoPreview,
   initiatePayment,
   handleWebhook,
   getPaymentDetail,

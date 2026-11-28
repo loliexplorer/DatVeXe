@@ -163,6 +163,11 @@ export async function applyVoucherApi({ code, booking_code, order_amount, route_
 }
 
 // === PAYMENT SERVICE ===
+export async function getPaymentBankInfoApi({ booking_code, amount }) {
+  const params = new URLSearchParams({ booking_code, amount: String(amount) });
+  return requestJson(`/api/payments/bank-info?${params.toString()}`);
+}
+
 export async function initiatePaymentApi({ booking_id, booking_code, amount, payment_method }) {
   return requestJson('/api/payments/initiate', {
     method: 'POST',
