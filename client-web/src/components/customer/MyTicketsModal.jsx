@@ -15,11 +15,11 @@ export default function MyTicketsModal({
   onCancelTicket,
   onOpenReviews
 }) {
-  if (!isOpen) return null;
-
   // Trạng thái modal xác nhận hủy vé
   const [ticketToCancel, setTicketToCancel] = useState(null);
   const [cancelSuccessMsg, setCancelSuccessMsg] = useState('');
+
+  if (!isOpen) return null;
 
   const handleConfirmCancel = () => {
     if (!ticketToCancel) return;

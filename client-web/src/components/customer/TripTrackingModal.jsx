@@ -40,10 +40,8 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
       .catch(() => setJourneyLogs([]));
   }, [isOpen, ticket?.tripId]);
 
-  if (!isOpen) return null;
-
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!isOpen || !mapContainerRef.current) return;
 
     // Fix lỗi icon marker mặc định của Leaflet trong webpack/vite
     delete L.Icon.Default.prototype._getIconUrl;
@@ -135,7 +133,9 @@ export default function TripTrackingModal({ isOpen, onClose, ticket }) {
       clearInterval(speedInterval);
       map.remove();
     };
-  }, [currentStep]);
+  }, [isOpen, currentStep]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">

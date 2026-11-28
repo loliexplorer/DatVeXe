@@ -7,8 +7,6 @@ import {
 import { loginApi, registerApi, forgotPasswordApi } from '../../services/userApi';
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
-  if (!isOpen) return null;
-
   // Trạng thái form: 'login' | 'register' | 'forgot_password'
   const [mode, setMode] = useState('login'); 
 
@@ -32,6 +30,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   // Thông báo lỗi & Loading
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isOpen) return null;
 
   // Xử lý gửi form Đăng nhập / Đăng ký qua API Gateway -> user-service
   const handleSubmit = async (e) => {

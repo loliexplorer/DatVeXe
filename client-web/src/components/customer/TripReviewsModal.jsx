@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { X, Star, MessageSquare, ThumbsUp, Send, CheckCircle2, User } from 'lucide-react';
 
 export default function TripReviewsModal({ isOpen, onClose, trip, reviews = [], onAddReview, currentUser }) {
-  if (!isOpen || !trip) return null;
-
   const [newRating, setNewRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
   const [commentText, setCommentText] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  if (!isOpen || !trip) return null;
 
   // Danh sách đánh giá thực tế từ trip-service
   const currentReviews = reviews || [];
