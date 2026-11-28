@@ -72,7 +72,7 @@ async function settleExpiredRefundPoints() {
           body: JSON.stringify({
             user_id: b.user_id,
             points_change: earnedPoints,
-            action_type: 'TRIP_EARN',
+            action_type: 'TRIP_REWARD',
             description: `Tích lũy điểm hội viên sau khi hết hạn hoàn vé đơn #${b.booking_code}`
           })
         });
