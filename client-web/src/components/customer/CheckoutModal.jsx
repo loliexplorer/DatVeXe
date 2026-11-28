@@ -422,32 +422,6 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
                   </div>
                 </label>
               </div>
-
-              {/* Chọn ngân hàng / ví khi thanh toán QR */}
-              {paymentMethod === 'QR_PAYMENT' && (
-                <div className="mt-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-2">
-                    Chọn ứng dụng ngân hàng / ví quét mã QR:
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {SUPPORTED_QR_APPS.map((app) => (
-                      <button
-                        key={app.id}
-                        type="button"
-                        onClick={() => setSelectedQrApp(app.id)}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all ${
-                          selectedQrApp === app.id
-                            ? `${app.badge} ring-2 ring-brand-500/40 shadow-xs`
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${app.dot}`} />
-                        <span>{app.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Nút tiếp tục sang màn hình QR / Chuyển khoản */}
@@ -483,7 +457,7 @@ export default function CheckoutModal({ trip, selectedSeats, currentUser, onClos
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 mb-3">
                   <QrCode className="w-3.5 h-3.5" />
-                  {paymentMethod === 'QR_PAYMENT' ? `Mở ${selectedQrApp} để quét mã` : 'Quét nhanh VietQR MB Bank'}
+                  {paymentMethod === 'QR_PAYMENT' ? 'Quét mã VietQR để thanh toán' : 'Quét nhanh VietQR MB Bank'}
                 </span>
 
                 {bankInfo?.qr_code_image_url && (

@@ -431,11 +431,55 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+// 7. Lấy danh sách ghế đã bán hoặc đang được giữ chỗ theo trip_id (Dùng cho trip-service đồng bộ sơ đồ ghế)
+const getOccupiedSeatsByTrip = async (req, res) => {
+  const { tripId } = req.params;
+
+  try {
+    await pool.execute('DELETE FROM seat_locks WHERE expires_at < NOW()');
+
+    const [bookedRows] = await pool.query(
+      `SELECT DISTINCT t.seat_code
+       FROM tickets t
+       JOIN bookings b ON t.booking_id = b.id
+       WHERE t.trip_id = ? AND b.status != 'CANCELLED'`,
+      [tripId]
+    );
+
+    const [lockedRows] = await pool.query(
+      `SELECT DISTINCT seat_code
+       FROM seat_locks
+       WHERE trip_id = ? AND expires_at > NOW()`,
+      [tripId]
+    );
+
+    const bookedSeats = bookedRows.map(r => r.seat_code);
+    const lockedSeats = lockedRows.map(r => r.seat_code);
+    const occupiedSeats = Array.from(new Set([...bookedSeats, ...lockedSeats]));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        trip_id: Number(tripId),
+        booked_seats: bookedSeats,
+        locked_seats: lockedSeats,
+        occupied_seats: occupiedSeats
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi khi lấy danh sách ghế đã chiếm: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   holdSeats,
   releaseSeats,
   createBooking,
   getMyBookings,
   getBookingDetail,
-  cancelBooking
+  cancelBooking,
+  getOccupiedSeatsByTrip
 };

@@ -1,5 +1,25 @@
 const { pool } = require('../config/db');
 
+const BOOKING_SERVICE_URL = process.env.BOOKING_SERVICE_URL || 'http://localhost:5003';
+
+// Helper đồng bộ danh sách ghế đã bán / đang giữ chỗ trực tiếp từ booking-service
+async function fetchOccupiedSeats(tripId) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const resp = await fetch(`${BOOKING_SERVICE_URL}/api/bookings/trips/${tripId}/occupied-seats`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    return json?.data?.occupied_seats || [];
+  } catch {
+    clearTimeout(timeout);
+    return [];
+  }
+}
+
 // 1. [GET] /api/trips - Tìm kiếm và lọc danh sách chuyến xe
 async function searchTrips(req, res) {
   try {
@@ -65,8 +85,8 @@ async function searchTrips(req, res) {
 
     const [trips] = await pool.query(query, params);
 
-    // Chuẩn hóa định dạng hiển thị cho Frontend
-    const formattedTrips = trips.map(t => {
+    // Chuẩn hóa định dạng hiển thị & đồng bộ ghế thực tế từ booking-service
+    const formattedTrips = await Promise.all(trips.map(async (t) => {
       const depDate = new Date(t.departure_time);
       const arrDate = new Date(t.arrival_time);
 
@@ -81,6 +101,8 @@ async function searchTrips(req, res) {
       } else if (t.bus_type === 'SEAT') {
         busTypeName = 'Xe Ghế ngồi tiêu chuẩn';
       }
+
+      const occupiedSeats = await fetchOccupiedSeats(t.id);
 
       return {
         id: t.id,
@@ -101,8 +123,8 @@ async function searchTrips(req, res) {
         price: parseFloat(t.price),
         total_seats: t.total_seats,
         floor_count: t.floor_count,
-        available_seats: Math.max(0, t.total_seats - 4), // Mặc định trừ các ghế đã bán mẫu
-        booked_seats: ['A01', 'A02', 'A05', 'B01'], // Danh sách ghế mẫu đã bán
+        available_seats: Math.max(0, t.total_seats - occupiedSeats.length),
+        booked_seats: occupiedSeats,
         rating: parseFloat(parseFloat(t.rating).toFixed(1)),
         reviews_count: parseInt(t.reviews_count, 10) || 128,
         amenities: t.bus_type === 'LIMOUSINE' 
@@ -110,7 +132,7 @@ async function searchTrips(req, res) {
           : ['Wifi miễn phí', 'Nước suối & Khăn lạnh', 'Cổng sạc USB', 'Chăn ấm'],
         status: t.status
       };
-    });
+    }));
 
     return res.status(200).json({
       success: true,
@@ -184,15 +206,15 @@ async function getTripSeats(req, res) {
       [busId]
     );
 
-    // Danh sách ghế đã bán mẫu
-    const bookedSeatsMock = ['A01', 'A02', 'A05', 'B01'];
+    // Đồng bộ danh sách ghế thực tế đã bán / đang giữ chỗ từ booking-service
+    const occupiedSeats = await fetchOccupiedSeats(tripId);
 
     const formattedSeats = seats.map(s => ({
       id: s.id,
       seat_code: s.seat_code,
       floor_number: s.floor_number,
       seat_type: s.seat_type,
-      is_booked: bookedSeatsMock.includes(s.seat_code)
+      is_booked: occupiedSeats.includes(s.seat_code)
     }));
 
     return res.status(200).json({
@@ -200,7 +222,7 @@ async function getTripSeats(req, res) {
       data: {
         trip_id: tripId,
         total_seats: formattedSeats.length,
-        booked_seats: bookedSeatsMock,
+        booked_seats: occupiedSeats,
         seats: formattedSeats
       }
     });

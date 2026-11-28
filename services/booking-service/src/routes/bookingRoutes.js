@@ -104,6 +104,24 @@ router.get('/my-bookings', optionalAuthMiddleware, bookingController.getMyBookin
 
 /**
  * @swagger
+ * /api/bookings/trips/{tripId}/occupied-seats:
+ *   get:
+ *     summary: "Lấy danh sách ghế đã bán và đang giữ chỗ của chuyến xe (Đồng bộ sang trip-service)"
+ *     tags: [Bookings]
+ *     parameters:
+ *       - in: path
+ *         name: tripId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: "Danh sách ghế đã bán và đang khóa"
+ */
+router.get('/trips/:tripId/occupied-seats', bookingController.getOccupiedSeatsByTrip);
+
+/**
+ * @swagger
  * /api/bookings/{idOrCode}:
  *   get:
  *     summary: "Xem chi tiết một đơn đặt vé theo ID hoặc Mã đơn"
