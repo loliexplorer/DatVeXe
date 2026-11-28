@@ -56,6 +56,7 @@ router.patch('/check-in', authMiddleware, roleMiddleware('Driver', 'Admin'), tic
  *       404:
  *         description: "Không tìm thấy vé"
  */
+router.get('/trip/:tripId', authMiddleware, roleMiddleware('Driver', 'Admin'), ticketController.getTicketsByTrip);
 router.get('/qr/:qrCode', ticketController.getTicketByQr);
 
 module.exports = router;

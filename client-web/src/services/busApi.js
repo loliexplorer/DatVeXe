@@ -77,6 +77,11 @@ export async function searchTripsApi({ origin, destination, departDate, busType,
   return (data.data || []).map(normalizeTrip);
 }
 
+export async function getTripDetailApi(tripId) {
+  const data = await requestJson(`/api/trips/${tripId}`);
+  return normalizeTrip(data.data);
+}
+
 export async function getTripSeatsApi(tripId) {
   const data = await requestJson(`/api/trips/${tripId}/seats`);
   return data.data;
@@ -146,6 +151,14 @@ export async function checkInTicketApi(qr_code) {
   });
 }
 
+export async function getTripTicketsApi(tripId) {
+  const data = await requestJson(`/api/tickets/trip/${tripId}`, {
+    method: 'GET',
+    auth: true
+  });
+  return data.data || [];
+}
+
 // === VOUCHER SERVICE ===
 export async function validateVoucherApi({ code, order_amount, route_name }) {
   return requestJson('/api/vouchers/validate', {
@@ -209,4 +222,20 @@ export async function getDriverScheduleApi() {
     auth: true
   });
   return data.data || [];
+}
+
+export async function updateDriverAssignmentStatusApi(assignmentId, { status, notes }) {
+  return requestJson(`/api/dispatch/assignments/${assignmentId}/status`, {
+    method: 'PATCH',
+    body: { status, notes },
+    auth: true
+  });
+}
+
+export async function addDriverJourneyLogApi(assignmentId, { checkpoint_name, event_type, description = '', latitude = null, longitude = null }) {
+  return requestJson(`/api/dispatch/assignments/${assignmentId}/logs`, {
+    method: 'POST',
+    body: { checkpoint_name, event_type, description, latitude, longitude },
+    auth: true
+  });
 }

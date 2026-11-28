@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { X, ScanLine, CheckCircle } from 'lucide-react';
+import { X, ScanLine, CheckCircle, Loader2 } from 'lucide-react';
+import { checkInTicketApi } from '../services/busApi';
 
 /**
- * Modal soát vé / điểm danh hành khách cho 1 cuốc xe.
- * Danh sách hành khách do component cha quản lý (để đồng bộ số "Đã lên xe" ở Cổng tài xế).
+ * Modal soát vé / điểm danh hành khách dùng API thật (booking-service PATCH /api/tickets/check-in).
  *
  * Props:
  *  - isOpen, onClose
- *  - ride: { code, routeLabel, departTime, plateNumber, passengers: [{ id, seat, name, phone, pickupPoint, qrCode, isCheckedIn }] }
- *  - onCheckIn(passengerId)
+ *  - ride: { id, tripId, code, routeLabel, departTime, plateNumber, passengers: [{ id, seat, name, phone, bookingCode, qrCode, isCheckedIn, checkedInAt }] }
+ *  - onCheckedIn(tripId, ticketId)
  */
-export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
+export default function RideCheckInModal({ isOpen, onClose, ride, onCheckedIn }) {
   const [inputQr, setInputQr] = useState('');
   const [scanMessage, setScanMessage] = useState(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   if (!isOpen || !ride) return null;
 
@@ -24,25 +25,48 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
     onClose();
   };
 
-  // Xử lý quét / nhập mã vé
-  const handleScan = (codeToScan) => {
-    const code = (codeToScan || inputQr).trim();
-    if (!code) return;
+  // Xử lý quét mã QR thật hoặc nhập số ghế (tự tra mã QR tương ứng rồi gọi API check-in thật)
+  const handleScan = async (codeToScan) => {
+    const rawCode = (codeToScan || inputQr).trim();
+    if (!rawCode || isScanning) return;
 
-    const found = passengers.find(
-      p => p.qrCode === code || p.seat.toLowerCase() === code.toLowerCase()
+    const matchedBySeat = passengers.find(
+      p => p.seat.toLowerCase() === rawCode.toLowerCase() || p.qrCode === rawCode
     );
-    if (found) {
-      if (found.isCheckedIn) {
-        setScanMessage({ type: 'warning', text: `Ghế ${found.seat} (${found.name}) ĐÃ ĐƯỢC SOÁT VÉ TRƯỚC ĐÓ!` });
-      } else {
-        onCheckIn(found.id);
-        setScanMessage({ type: 'success', text: `Soát vé thành công: Ghế ${found.seat} - ${found.name}` });
-      }
-    } else {
-      setScanMessage({ type: 'error', text: 'Mã vé không hợp lệ hoặc không thuộc chuyến xe này!' });
+
+    if (matchedBySeat && matchedBySeat.isCheckedIn) {
+      setScanMessage({
+        type: 'warning',
+        text: `Ghế ${matchedBySeat.seat} (${matchedBySeat.name}) ĐÃ ĐƯỢC SOÁT VÉ TRƯỚC ĐÓ!`
+      });
+      setInputQr('');
+      return;
     }
-    setInputQr('');
+
+    const qrToSend = matchedBySeat ? matchedBySeat.qrCode : rawCode;
+    setIsScanning(true);
+    setScanMessage(null);
+
+    try {
+      const res = await checkInTicketApi(qrToSend);
+      const checkedTicket = res.data;
+      setScanMessage({
+        type: 'success',
+        text: res.message || `Soát vé thành công: Ghế ${checkedTicket?.seat_code || matchedBySeat?.seat || ''}!`
+      });
+      if (onCheckedIn) {
+        await onCheckedIn(ride.tripId, checkedTicket?.id || matchedBySeat?.id);
+      }
+    } catch (err) {
+      const isAlready = String(err.message || '').toLowerCase().includes('đã được check-in');
+      setScanMessage({
+        type: isAlready ? 'warning' : 'error',
+        text: err.message || 'Mã vé không hợp lệ hoặc không thuộc chuyến xe này!'
+      });
+    } finally {
+      setIsScanning(false);
+      setInputQr('');
+    }
   };
 
   const checkedCount = passengers.filter(p => p.isCheckedIn).length;
@@ -85,14 +109,17 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
               type="text"
               value={inputQr}
               onChange={(e) => setInputQr(e.target.value)}
+              disabled={isScanning}
               placeholder={`VD: Nhập ${passengers[0]?.seat || 'A01'} hoặc dán mã QR...`}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none text-sm font-semibold"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none text-sm font-semibold disabled:opacity-60"
             />
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 active:scale-95"
+              disabled={isScanning}
+              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-60"
             >
-              <ScanLine className="w-4 h-4" /> Soát vé
+              {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
+              {isScanning ? 'Đang soát...' : 'Soát vé'}
             </button>
           </form>
 
@@ -108,17 +135,17 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
           )}
         </div>
 
-        {/* Danh sách hành khách trên chuyến */}
+        {/* Danh sách hành khách thực tế từ booking-service */}
         <div className="p-6 space-y-3">
           <div className="flex justify-between items-center mb-1">
             <span className="text-xs font-bold text-slate-600 uppercase">
               Danh sách hành khách ({checkedCount}/{passengers.length} đã lên xe)
             </span>
-            <span className="text-xs text-slate-400">Bấm nút để điểm danh thủ công</span>
+            <span className="text-xs text-slate-400">Đồng bộ trực tiếp Booking Service</span>
           </div>
 
           {passengers.length === 0 && (
-            <p className="text-sm text-slate-500 text-center py-6">Cuốc xe này chưa có hành khách đặt vé.</p>
+            <p className="text-sm text-slate-500 text-center py-6">Chuyến xe này hiện chưa có hành khách đặt vé.</p>
           )}
 
           {passengers.map(p => (
@@ -126,13 +153,13 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
               key={p.id}
               className={`p-4 rounded-xl border flex items-center justify-between transition-all ${
                 p.isCheckedIn
-                  ? "bg-emerald-50/60 border-emerald-300 text-slate-800"
-                  : "bg-white border-slate-200 hover:border-slate-300"
+                  ? 'bg-emerald-50/60 border-emerald-300 text-slate-800'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
               <div className="flex items-center gap-3">
                 <span className={`w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center ${
-                  p.isCheckedIn ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"
+                  p.isCheckedIn ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'
                 }`}>
                   {p.seat}
                 </span>
@@ -140,7 +167,7 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
                 <div>
                   <span className="font-bold text-sm text-slate-900 block">{p.name}</span>
                   <span className="text-xs text-slate-500 flex items-center gap-1">
-                    SĐT: {p.phone} • {p.pickupPoint}
+                    SĐT: {p.phone} • Mã đơn: {p.bookingCode}
                   </span>
                 </div>
               </div>
@@ -152,8 +179,9 @@ export default function RideCheckInModal({ isOpen, onClose, ride, onCheckIn }) {
                   </span>
                 ) : (
                   <button
+                    disabled={isScanning}
                     onClick={() => handleScan(p.qrCode)}
-                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-brand-600 hover:text-white text-slate-700 font-bold text-xs transition-all border border-slate-300"
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-brand-600 hover:text-white text-slate-700 font-bold text-xs transition-all border border-slate-300 disabled:opacity-50"
                   >
                     Điểm danh
                   </button>

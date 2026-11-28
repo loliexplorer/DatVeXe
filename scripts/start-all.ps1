@@ -59,8 +59,9 @@ function Wait-Port([int]$Port, [int]$Seconds) {
 # ---------------------------------------------------------------------
 Write-Step '1/4  MySQL database server'
 
-$laragonMysql = Get-ChildItem 'C:\laragon\bin\mysql\*\bin\mysqld.exe' -ErrorAction SilentlyContinue |
-  Sort-Object FullName -Descending | Select-Object -First 1
+$laragonMysql = @('C:\laragon', 'D:\laragon', 'E:\laragon') | ForEach-Object {
+  Get-ChildItem "$_\bin\mysql\*\bin\mysqld.exe" -ErrorAction SilentlyContinue
+} | Sort-Object FullName -Descending | Select-Object -First 1
 $mysqlClient = $null
 if ($laragonMysql) {
   $mysqlClient = Join-Path $laragonMysql.DirectoryName 'mysql.exe'
@@ -115,7 +116,8 @@ if (-not $mysqlClient -or -not (Test-Path $mysqlClient)) {
     if ($existing -contains $dbName) {
       Write-Skip "$dbName already exists"
     } else {
-      Get-Content -Raw -Encoding UTF8 $_.FullName | & $mysqlClient @mysqlArgs
+      $sqlSourcePath = $_.FullName -replace '\\', '/'
+      & $mysqlClient @mysqlArgs "--execute=source $sqlSourcePath"
       if ($LASTEXITCODE -eq 0) { Write-Ok "$dbName created from $($_.Name)" }
       else { Write-Fail "$dbName - import of $($_.Name) failed" }
     }

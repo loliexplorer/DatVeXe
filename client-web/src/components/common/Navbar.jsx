@@ -84,11 +84,6 @@ export default function Navbar({
                 Cổng Quản Trị (Admin)
               </button>
             )}
-
-            <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-brand-800/80 border border-brand-700/60 text-brand-300">
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
-              Cam kết giữ đúng 100% số ghế
-            </div>
           </nav>
 
           {/* Right Action Buttons */}

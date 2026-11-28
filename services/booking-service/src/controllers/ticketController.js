@@ -110,7 +110,37 @@ const getTicketByQr = async (req, res) => {
   }
 };
 
+// 3. Tài xế / Admin lấy danh sách hành khách & vé thực tế của 1 chuyến xe
+const getTicketsByTrip = async (req, res) => {
+  const { tripId } = req.params;
+
+  try {
+    const [tickets] = await pool.execute(
+      `SELECT t.id, t.booking_id, t.trip_id, t.seat_code, t.passenger_name, t.ticket_price,
+              t.qr_code, t.check_in_status, t.checked_in_at, t.checked_in_by,
+              b.booking_code, b.customer_phone, b.customer_email, b.status AS booking_status
+       FROM tickets t
+       JOIN bookings b ON t.booking_id = b.id
+       WHERE t.trip_id = ? AND b.status != 'CANCELLED'
+       ORDER BY t.seat_code ASC`,
+      [tripId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      total: tickets.length,
+      data: tickets
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi khi lấy danh sách hành khách của chuyến xe: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   checkInTicket,
-  getTicketByQr
+  getTicketByQr,
+  getTicketsByTrip
 };

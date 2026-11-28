@@ -42,7 +42,7 @@ foreach ($port in $Ports.Keys) {
 }
 
 if (-not $KeepMySQL) {
-  $mysqld = Get-Process mysqld -ErrorAction SilentlyContinue | Where-Object { $_.Path -like 'C:\laragon\*' }
+  $mysqld = Get-Process mysqld -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\laragon\*' }
   if ($mysqld) {
     $admin = Join-Path (Split-Path -Parent $mysqld[0].Path) 'mysqladmin.exe'
     $adminArgs = @('--user=root', '--host=127.0.0.1', '--protocol=TCP')
